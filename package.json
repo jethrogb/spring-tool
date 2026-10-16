@@ -1,0 +1,26 @@
+{
+  "name": "spring-strip-jig",
+  "private": true,
+  "description": "Browser tool for designing bending jigs; builds to one self-contained spring-tool.html",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "pretest": "npm run build",
+    "test": "npm run test:solver && npm run test:sweep && npm run test:browser",
+    "test:solver": "node test/solver.test.js",
+    "test:sweep": "node test/drag-sweep.test.js",
+    "test:browser": "node test/browser.test.js",
+    "postinstall": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@eslint/js": "~9.39.5",
+    "eslint": "~9.39.5",
+    "globals": "~17.13.0",
+    "playwright": "~1.61.0",
+    "prettier": "~3.9.10"
+  },
+  "engines": {
+    "node": ">=18.18"
+  }
+}

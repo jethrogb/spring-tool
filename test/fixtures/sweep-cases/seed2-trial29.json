@@ -1,0 +1,114 @@
+{
+  "about": "A drag from the drag sweep that did not settle on a valid shape. Pins are in mm, y down, before the drag; the drag moves pin `drag.pin` (1-based) by (dx, dy) in `moves` equal steps, with `iterationsPerMove` Newton iterations after each, then lets it settle.",
+  "replay": "node test/drag-sweep.test.js --case test/fixtures/sweep-cases/seed2-trial29.json",
+  "sweep": {
+    "seed": 2,
+    "trial": 29,
+    "replay": "node test/drag-sweep.test.js --seed 2 --only 29"
+  },
+  "settings": {
+    "d": 13.503115938745028,
+    "t": 3,
+    "holdFactor": 2
+  },
+  "pins": [
+    {
+      "id": 1,
+      "x": 100.66589272612049,
+      "y": -35.42619011617554,
+      "mode": "auto"
+    },
+    {
+      "id": 2,
+      "x": 201.3154733000861,
+      "y": 21.875883299799582,
+      "mode": "auto"
+    },
+    {
+      "id": 3,
+      "x": 267.08013608450074,
+      "y": 33.359272071793335,
+      "mode": "auto"
+    },
+    {
+      "id": 4,
+      "x": 335.0309909577626,
+      "y": -37.4776813608956,
+      "mode": "auto"
+    },
+    {
+      "id": 5,
+      "x": 435.5416768396002,
+      "y": 3.8720200554803075,
+      "mode": "auto"
+    },
+    {
+      "id": 6,
+      "x": 538.985512507607,
+      "y": 25.682590238602177,
+      "mode": "auto"
+    },
+    {
+      "id": 7,
+      "x": 597.0768076540329,
+      "y": 25.49690747423885,
+      "mode": "auto"
+    }
+  ],
+  "drag": {
+    "pin": 2,
+    "dx": -103.90694465204466,
+    "dy": -64.01876691450306,
+    "moves": 60,
+    "iterationsPerMove": 3
+  },
+  "outcome": {
+    "status": "failed",
+    "problems": ["ended \"failed\""],
+    "iterationsToSettle": 56,
+    "pinsAfterDrag": [
+      {
+        "id": 1,
+        "x": 100.66589272612049,
+        "y": -35.42619011617554,
+        "mode": "auto"
+      },
+      {
+        "id": 2,
+        "x": 97.40852864804144,
+        "y": -42.14288361470348,
+        "mode": "auto"
+      },
+      {
+        "id": 3,
+        "x": 267.08013608450074,
+        "y": 33.359272071793335,
+        "mode": "auto"
+      },
+      {
+        "id": 4,
+        "x": 335.0309909577626,
+        "y": -37.4776813608956,
+        "mode": "auto"
+      },
+      {
+        "id": 5,
+        "x": 435.5416768396002,
+        "y": 3.8720200554803075,
+        "mode": "auto"
+      },
+      {
+        "id": 6,
+        "x": 538.985512507607,
+        "y": 25.682590238602177,
+        "mode": "auto"
+      },
+      {
+        "id": 7,
+        "x": 597.0768076540329,
+        "y": 25.49690747423885,
+        "mode": "auto"
+      }
+    ]
+  }
+}

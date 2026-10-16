@@ -1,0 +1,6 @@
+spring-tool.html
+package-lock.json
+# whitespace between inline elements is significant in the page markup
+src/template.html
+# prose and tables are laid out by hand
+*.md

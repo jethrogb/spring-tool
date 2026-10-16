@@ -1,0 +1,15 @@
+# dependencies (npm install)
+node_modules/
+
+# written by the tests: screenshots and exported drawings
+test/out/
+
+# logs
+npm-debug.log*
+
+# editors and OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

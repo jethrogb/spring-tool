@@ -1,0 +1,138 @@
+{
+  "about": "A drag from the drag sweep that did not settle on a valid shape. Pins are in mm, y down, before the drag; the drag moves pin `drag.pin` (1-based) by (dx, dy) in `moves` equal steps, with `iterationsPerMove` Newton iterations after each, then lets it settle.",
+  "replay": "node test/drag-sweep.test.js --case test/fixtures/sweep-cases/seed1-trial30.json",
+  "sweep": {
+    "seed": 1,
+    "trial": 30,
+    "replay": "node test/drag-sweep.test.js --seed 1 --only 30"
+  },
+  "settings": {
+    "d": 24.656869306534933,
+    "t": 3,
+    "holdFactor": 2
+  },
+  "pins": [
+    {
+      "id": 1,
+      "x": 111.72191783400342,
+      "y": 37.84129511930109,
+      "mode": "auto"
+    },
+    {
+      "id": 2,
+      "x": 160.76756540721635,
+      "y": -12.251546262880575,
+      "mode": "auto"
+    },
+    {
+      "id": 3,
+      "x": 255.7737972847064,
+      "y": -37.82604378081208,
+      "mode": "left"
+    },
+    {
+      "id": 4,
+      "x": 333.9850596776163,
+      "y": 20.858797044893162,
+      "mode": "auto"
+    },
+    {
+      "id": 5,
+      "x": 405.2623887943395,
+      "y": 47.58808095827144,
+      "mode": "auto"
+    },
+    {
+      "id": 6,
+      "x": 499.7582949789978,
+      "y": 40.86905694141474,
+      "mode": "auto"
+    },
+    {
+      "id": 7,
+      "x": 608.4953415805918,
+      "y": 29.42779123756466,
+      "mode": "auto"
+    },
+    {
+      "id": 8,
+      "x": 654.3762180276104,
+      "y": -0.13694369706183096,
+      "mode": "auto"
+    },
+    {
+      "id": 9,
+      "x": 730.435001426579,
+      "y": -0.034266919844910815,
+      "mode": "auto"
+    }
+  ],
+  "drag": {
+    "pin": 3,
+    "dx": -106.14130983880781,
+    "dy": -116.99446084303523,
+    "moves": 60,
+    "iterationsPerMove": 3
+  },
+  "outcome": {
+    "status": "failed",
+    "problems": ["ended \"failed\""],
+    "iterationsToSettle": 115,
+    "pinsAfterDrag": [
+      {
+        "id": 1,
+        "x": 111.72191783400342,
+        "y": 37.84129511930109,
+        "mode": "auto"
+      },
+      {
+        "id": 2,
+        "x": 160.76756540721635,
+        "y": -12.251546262880575,
+        "mode": "auto"
+      },
+      {
+        "id": 3,
+        "x": 149.6324874458986,
+        "y": -154.8205046238473,
+        "mode": "left"
+      },
+      {
+        "id": 4,
+        "x": 333.9850596776163,
+        "y": 20.858797044893162,
+        "mode": "auto"
+      },
+      {
+        "id": 5,
+        "x": 405.2623887943395,
+        "y": 47.58808095827144,
+        "mode": "auto"
+      },
+      {
+        "id": 6,
+        "x": 499.7582949789978,
+        "y": 40.86905694141474,
+        "mode": "auto"
+      },
+      {
+        "id": 7,
+        "x": 608.4953415805918,
+        "y": 29.42779123756466,
+        "mode": "auto"
+      },
+      {
+        "id": 8,
+        "x": 654.3762180276104,
+        "y": -0.13694369706183096,
+        "mode": "auto"
+      },
+      {
+        "id": 9,
+        "x": 730.435001426579,
+        "y": -0.034266919844910815,
+        "mode": "auto"
+      }
+    ]
+  }
+}

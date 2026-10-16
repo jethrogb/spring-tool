@@ -1,0 +1,320 @@
+<!doctype html>
+<!--
+ * Copyright (c) Jethro G. Beekman
+ * 
+ * This program is free software: you can redistribute it and/or modify it 
+ * under the terms of the GNU General Public License as published by the Free 
+ * Software Foundation, either version 3 of the License, or (at your option) 
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT 
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or 
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for 
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with 
+ * this program. If not, see <https://www.gnu.org/licenses/>. 
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spring Strip Jig</title>
+<style>
+:root {
+  --bg: #e9ecef;
+  --busy-bg: #f5ddb0;
+  --problem-bg: #f3c9c4;
+  --busy-frame: #e0a63c;
+  --problem-frame: #d9534f;
+  --panel: #f8f9fa;
+  --ink: #1f2933;
+  --muted: #61707f;
+  --line: #d3d9df;
+  --wa: #ffffff;
+  --grid-minor: #e6eaee;
+  --grid-major: #c8d0d8;
+  --ruler: #f3f5f7;
+  --strip: #d8a657;
+  --strip-edge: #8a6122;
+  --centre: #4a3510;
+  --inside: #2563eb;
+  --outside: #0f9d6b;
+  --straight: #64748b;
+  --free: #7b8794;
+  --warn: #e8770c;
+  --tight: #dc2626;
+  --select: #7c3aed;
+  --through: #0e7490;
+  --accent: #2563eb;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+}
+#app { display: flex; height: 100%; width: 100%; }
+#stage { position: relative; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+/* the background outside the work area turns red when the settled result has a
+   problem, and amber (taking precedence) while the solver is still working */
+#bgfill { transition: fill .3s; }
+#stage.problem #bgfill { fill: var(--problem-bg); }
+#stage.converging #bgfill { fill: var(--busy-bg); }
+/* when zoomed in the background may be hidden: the rulers and a frame round
+   the drawing, always on screen, show the same state */
+#stage.problem { --ruler: var(--problem-bg); }
+#stage.converging { --ruler: var(--busy-bg); }
+#stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 3px transparent; transition: box-shadow .3s; }
+#stage.problem::after { box-shadow: inset 0 0 0 3px var(--problem-frame); }
+#stage.converging::after { box-shadow: inset 0 0 0 3px var(--busy-frame); }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
+#view.panning { cursor: grabbing; }
+#view.overpin { cursor: move; }
+#hud {
+  position: absolute; right: 8px; bottom: 8px; pointer-events: none;
+  background: rgba(255,255,255,.9); border: 1px solid var(--line); border-radius: 4px;
+  padding: 2px 8px; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px;
+}
+#panel {
+  flex: 0 0 312px; width: 312px; overflow-y: auto; scrollbar-gutter: stable; background: var(--panel);
+  border-left: 1px solid var(--line); padding: 10px 12px 24px;
+}
+#panel h1 { font-size: 15px; margin: 2px 0 8px; }
+#panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
+#panel h3 { font-size: 12px; color: var(--ink); margin: 12px 0 4px; font-weight: 600; }
+.toolbar { display: flex; gap: 4px; align-items: center; }
+.toolbar button { white-space: nowrap; padding: 4px 7px; }
+.toolbar .sep { flex: 1 1 auto; }
+.box { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 10px 0; }
+.sec { border-top: 1px solid var(--line); }
+.sec > summary {
+  cursor: pointer; list-style: none; padding: 9px 0 7px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--muted); user-select: none;
+}
+.sec > summary::-webkit-details-marker { display: none; }
+.sec > summary::before { content: "▸"; display: inline-block; width: 14px; transition: transform .15s; }
+.sec[open] > summary::before { transform: rotate(90deg); }
+.sec > :not(summary):last-child { margin-bottom: 10px; }
+.row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.row label { flex: 1 1 auto; color: var(--ink); }
+.row .unit { color: var(--muted); width: 22px; }
+.row .lbl { flex: 1 1 auto; display: flex; align-items: center; }
+.row .lbl label { flex: 0 0 auto; }
+.row .hint { margin: 0; }
+button { white-space: nowrap; }
+#ioMsg.ok { color: var(--outside); }
+#ioMsg.bad { color: var(--warn); }
+input[type=range] { width: 84px; }
+input[type=number] {
+  width: 84px; padding: 3px 5px; border: 1px solid var(--line); border-radius: 4px;
+  font: inherit; font-variant-numeric: tabular-nums; background: #fff; color: var(--ink);
+}
+input[type=number]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input:disabled { background: var(--panel); color: var(--muted); }
+button {
+  font: inherit; padding: 4px 9px; border: 1px solid var(--line); border-radius: 4px;
+  background: #fff; color: var(--ink); cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: #9aa5b1; }
+button:disabled { opacity: .45; cursor: default; }
+button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 4px 4px 0; }
+.seg.modes { width: 100%; }
+.seg.modes button { flex: 1 1 0; padding-left: 4px; padding-right: 4px; }
+/* Result and Selected pin keep a fixed layout: no row appears, disappears or wraps */
+dl.read { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; margin: 0; font-variant-numeric: tabular-nums; }
+dl.read dt { color: var(--muted); white-space: nowrap; }
+dl.read dd { margin: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.statusline { display: flex; align-items: center; height: 22px; margin-bottom: 4px; font-size: 14px; }
+#status { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#status.ok { color: var(--outside); }
+#status.busy { color: var(--muted); }
+#status.bad { color: var(--warn); font-weight: 600; }
+.pinhead { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 28px; }
+.oneline { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 18px; }
+.pininfo { display: flex; align-items: center; margin: 4px 0; }
+.pininfo .hint { margin: 0; min-width: 0; }
+.pininfo .info.off { visibility: hidden; }
+.info {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 15px; height: 15px; margin-left: 5px; border-radius: 50%; border: 1px solid currentColor;
+  color: var(--muted); font: italic 600 10px/1 Georgia, serif; cursor: help; vertical-align: 1px;
+}
+.info:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.info.warn { color: var(--warn); font-weight: 700; }
+#tooltip {
+  position: fixed; z-index: 50; max-width: 280px; padding: 7px 9px; border-radius: 6px;
+  background: #1f2933; color: #fff; font-size: 12px; line-height: 1.45; box-shadow: 0 4px 14px rgba(0,0,0,.2);
+  pointer-events: none; white-space: pre-line;
+}
+.hint { color: var(--muted); font-size: 12px; margin: 4px 0; }
+.chk { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
+.chk label { display: flex; align-items: center; gap: 5px; }
+.keys { margin: 4px 0; padding-left: 16px; color: var(--muted); font-size: 12px; }
+.keys li { margin: 2px 0; }
+.keys b { color: var(--ink); font-weight: 600; }
+.legend { list-style: none; margin: 4px 0; padding: 0; font-size: 12px; color: var(--muted); }
+.legend li { position: relative; padding-left: 17px; margin: 3px 0; }
+.legend b { color: var(--ink); font-weight: 600; }
+.legend i { position: absolute; left: 0; top: 3px; display: block; width: 10px; height: 10px; border-radius: 50%; }
+.legend i.ring { background: none; border: 2px solid; width: 8px; height: 8px; }
+.legend i.ring.dashed { border-style: dashed; }
+.legend i.dot { background: #fff; border: 1.5px solid var(--centre); width: 7px; height: 7px; }
+.legend i.bar { border-radius: 2px; height: 5px; top: 6px; }
+.legend i.plus { border-radius: 0; background:
+  linear-gradient(var(--tight), var(--tight)) center / 10px 2px no-repeat,
+  linear-gradient(var(--tight), var(--tight)) center / 2px 10px no-repeat; }
+#view text { font: 11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  #app { flex-direction: column; height: auto; min-height: 100%; }
+  #stage { flex: 0 0 62vh; height: 62vh; }
+  #panel { flex: 0 0 auto; width: 100%; border-left: 0; border-top: 1px solid var(--line); padding: 10px 16px 24px; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <svg id="view" xmlns="http://www.w3.org/2000/svg" aria-label="Jig drawing">
+      <rect id="bgfill" x="0" y="0" width="100%" height="100%" fill="var(--bg)"/>
+      <g id="world">
+        <rect id="wa-fill" fill="var(--wa)"/>
+        <image id="bgimg" preserveAspectRatio="xMidYMid meet" style="display:none"/>
+      </g>
+      <path id="grid-minor" fill="none" stroke="var(--grid-minor)" stroke-width="1" shape-rendering="crispEdges"/>
+      <path id="grid-major" fill="none" stroke="var(--grid-major)" stroke-width="1" shape-rendering="crispEdges"/>
+      <g id="world2">
+        <rect id="wa-outline" fill="none" stroke="#5b6773" stroke-width="1" vector-effect="non-scaling-stroke"/>
+        <g id="strip-layer"></g>
+        <g id="pin-layer"></g>
+      </g>
+      <g id="overlay"></g>
+      <g id="rulers"></g>
+    </svg>
+    <div id="hud"><span id="cursor">–</span></div>
+  </main>
+  <aside id="panel">
+    <div class="top">
+      <h1>Spring strip jig</h1>
+      <div class="toolbar">
+        <button id="btnUndo" title="Undo (Ctrl+Z)">Undo</button><button id="btnRedo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+        <span class="sep"></span>
+        <button id="btnFit" title="Zoom to the work area (F; F again zooms to the pins)">Fit</button><button id="btnFitPins" title="Zoom to the pins">Fit pins</button>
+        <span class="sep"></span>
+        <button id="btnClear" title="Remove all pins (can be undone)">Clear all</button>
+      </div>
+    </div>
+
+    <section class="box" aria-labelledby="hResult">
+      <h2 id="hResult">Result</h2>
+      <div class="statusline"><span id="status">–</span><span id="statusInfo" class="info" tabindex="0" role="button" aria-label="About this status">i</span></div>
+      <dl class="read">
+        <dt>Pins</dt><dd id="rPins">0</dd>
+        <dt title="Length of the strip between the first and last contact point">Contact length</dt><dd id="rLen">–</dd>
+        <dt title="Suggested blank length: the contact length plus the end overhang at both ends">Blank length</dt><dd id="rBlank">–</dd>
+        <dt title="Smallest bend radius along the strip, and the nearest pin">Min bend radius</dt><dd id="rMinR">–</dd>
+      </dl>
+    </section>
+
+    <section class="box" id="pinbox" aria-labelledby="pinName">
+      <h2>Selected pin</h2>
+      <div class="pinhead"><b id="pinName">No pin selected</b><button id="btnDel" title="Remove the pin (Delete)">Remove</button></div>
+      <div class="pininfo"><span id="pinInfo" class="hint oneline">Click a pin to select it</span><span id="pinInfoTip" class="info" tabindex="0" role="button" aria-label="About this pin">i</span></div>
+      <div class="row"><label for="inPX">X</label><input id="inPX" type="number" step="any"><span class="unit">mm</span></div>
+      <div class="row"><label for="inPY">Y</label><input id="inPY" type="number" step="any"><span class="unit">mm</span></div>
+      <div class="row"><span class="seg modes"><button id="mThrough" title="Through (T)">Through</button><button id="mAuto" title="Auto (A)">Auto</button><button id="mLeft" title="Left">Left</button><button id="mRight" title="Right">Right</button></span></div>
+    </section>
+
+    <details class="sec" data-sec="settings" open>
+      <summary>Settings</summary>
+      <h3>Work area</h3>
+      <div class="row"><label for="inW">Width</label><input id="inW" type="number" min="0" step="any"><span class="unit">mm</span></div>
+      <div class="row"><label for="inH">Height</label><input id="inH" type="number" min="0" step="any"><span class="unit">mm</span></div>
+      <div class="row"><label>Background</label><button id="btnBg">Choose image…</button><button id="btnBgRemove">Remove</button><input id="fileBg" type="file" accept="image/*" hidden></div>
+      <div class="row"><label for="inBgOpacity">Image opacity</label><input id="inBgOpacity" type="range" min="0.05" max="1" step="0.05"><span class="unit" id="bgOpacityVal"></span></div>
+      <h3>Strip and pins</h3>
+      <div class="row"><label for="inD">Pin diameter</label><input id="inD" type="number" min="0" step="any"><span class="unit">mm</span></div>
+      <div class="row"><label for="inT">Strip thickness</label><input id="inT" type="number" min="0" step="any"><span class="unit">mm</span></div>
+      <div class="row"><label for="inO">End overhang</label><input id="inO" type="number" min="0" step="any"><span class="unit">mm</span></div>
+      <div class="row"><label for="inR">Min bend radius</label><input id="inR" type="number" min="0" step="any" placeholder="off"><span class="unit">mm</span></div>
+      <p class="hint">Sections bent tighter than this are drawn red.</p>
+      <h3>Sliding out</h3>
+      <div class="row"><span class="lbl"><label for="inHold">Length limit</label><span class="info" tabindex="0" role="button" aria-label="About the length limit" data-tip="On frictionless pins some layouts have no resting shape: the strip would slide out. It is then held, at most at this multiple of the summed pin-to-pin distances, and the tool shows the friction the end pins need. The limit only applies when the strip would otherwise slide out.">i</span></span><input id="inHold" type="number" min="1" step="any"><span class="unit">×</span></div>
+    </details>
+
+    <details class="sec" data-sec="help">
+      <summary>Help</summary>
+      <h3>Pin colours</h3>
+      <ul class="legend">
+        <li><i style="background:var(--inside)"></i><b>Inside</b>: on the concave side, the strip bends round the pin</li>
+        <li><i style="background:var(--outside)"></i><b>Outside</b>: on the convex side, the pin pushes the bend</li>
+        <li><i style="background:var(--straight)"></i><b>Straight</b>: the strip is straight at the pin</li>
+        <li><i class="ring" style="border-color:var(--through)"></i><b>Through</b>: the strip passes through the pin centre</li>
+        <li><i class="ring dashed" style="border-color:var(--free)"></i><b>Released</b>: a Left/Right pin the strip does not touch (listed as a warning)</li>
+        <li><i class="ring" style="border-color:var(--warn)"></i><b>Orange ring</b>: the pin has a warning (see the Result status)</li>
+        <li><i class="ring" style="border-color:var(--select)"></i><b>Purple ring</b>: the selected pin</li>
+        <li><i class="dot"></i><b>White dot</b>: where the strip touches the pin</li>
+        <li><i class="bar" style="background:var(--tight)"></i><b>Red strip</b>: bent tighter than the minimum radius</li>
+        <li><i class="plus"></i><b>Red +</b>: where the strip bends tightest (the minimum bend radius in Result)</li>
+      </ul>
+      <h3>Pin modes</h3>
+      <ul class="keys">
+        <li><b>Through</b> (the default): the strip passes through the pin's centre, like a slotted pin or an eyelet. It slides freely and never lets go.</li>
+        <li><b>Auto</b>: the strip touches the pin on whichever side it presses against.</li>
+        <li><b>Left</b> / <b>Right</b>: the pin sits on that side of the strip, looking from pin 1 towards the last pin. It only touches when the strip presses against it, and is released otherwise.</li>
+      </ul>
+      <h3>Controls</h3>
+      <ul class="keys">
+        <li><b>Click on an empty spot</b> to add a pin; keep the button down and drag to place it. Near the strip it goes into that stretch, otherwise onto the nearer end.</li>
+        <li><b>Drag a pin</b> to move it. <b>Alt</b> turns off grid snapping.</li>
+        <li><b>Right-click</b> a pin, or press <b>Delete</b>, to remove it.</li>
+        <li><b>Double-click</b> a pin or press <b>X</b> to cycle Through → Auto → Left → Right; <b>T</b> sets Through, <b>A</b> sets Auto.</li>
+        <li><b>Arrows</b> nudge one minor grid step, <b>Shift</b> one major step.</li>
+        <li><b>Wheel</b> zooms. Pan by dragging with the middle or right button, on a ruler, or with two fingers. <b>F</b> fits the work area; pressed again, it fits the pins.</li>
+        <li><b>Ctrl+Z</b> / <b>Ctrl+Shift+Z</b> undo and redo, <b>Esc</b> deselects.</li>
+      </ul>
+    </details>
+
+    <details class="sec" data-sec="io">
+      <summary>Import / export</summary>
+      <h3>Drawing: SVG in true mm</h3>
+      <div class="chk">
+        <label><input type="checkbox" data-layer="work-area" checked>work-area</label>
+        <label><input type="checkbox" data-layer="pins" checked>pins</label>
+        <label><input type="checkbox" data-layer="pin-centres" checked>pin-centres</label>
+        <label><input type="checkbox" data-layer="strip-outline" checked>strip-outline</label>
+        <label><input type="checkbox" data-layer="strip-centreline" checked>strip-centreline</label>
+        <label><input type="checkbox" data-layer="grid">grid</label>
+        <label><input type="checkbox" data-layer="labels">labels</label>
+      </div>
+      <div class="row"><button id="btnExport" class="primary">Download SVG</button></div>
+      <h3>Pin coordinates: TSV</h3>
+      <p class="hint">One pin per line, in strip order: x and y in mm (y pointing down, as in the drawing) and optionally the mode (through, auto, left, right). Columns separated by tabs.</p>
+      <div class="row"><button id="btnExportTsv">Download TSV</button></div>
+      <h3>Open</h3>
+      <div class="row"><button id="btnOpen">Open file…</button><span class="hint">an SVG saved by this tool, or a TSV coordinate list</span><input id="fileOpen" type="file" accept=".svg,.tsv,.txt,image/svg+xml,text/tab-separated-values,text/plain" hidden></div>
+      <div id="ioMsg" class="hint oneline" role="status"></div>
+      <h3>Example</h3>
+      <div class="row"><button id="btnExample">Load example</button><span class="hint">replaces the current pins (can be undone)</span></div>
+    </details>
+  </aside>
+  <div id="tooltip" role="tooltip" hidden></div>
+</div>
+
+<script id="solver">
+//@SOLVER@
+</script>
+
+<script id="app-script">
+//@APP@
+</script>
+</body>
+</html>

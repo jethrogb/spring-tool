@@ -1,0 +1,150 @@
+{
+  "about": "A drag from the drag sweep that did not settle on a valid shape. Pins are in mm, y down, before the drag; the drag moves pin `drag.pin` (1-based) by (dx, dy) in `moves` equal steps, with `iterationsPerMove` Newton iterations after each, then lets it settle.",
+  "replay": "node test/drag-sweep.test.js --case test/fixtures/sweep-cases/seed12-trial6.json",
+  "sweep": {
+    "seed": 12,
+    "trial": 6,
+    "replay": "node test/drag-sweep.test.js --seed 12 --only 6"
+  },
+  "settings": {
+    "d": 13.956760501468908,
+    "t": 3,
+    "holdFactor": 2
+  },
+  "pins": [
+    {
+      "id": 1,
+      "x": 102.30273346523882,
+      "y": -47.44831216402739,
+      "mode": "auto"
+    },
+    {
+      "id": 2,
+      "x": 187.77204097610527,
+      "y": 3.314168915764504,
+      "mode": "auto"
+    },
+    {
+      "id": 3,
+      "x": 259.5389523634403,
+      "y": 33.09960867422615,
+      "mode": "auto"
+    },
+    {
+      "id": 4,
+      "x": 341.1826248565608,
+      "y": 31.504489845365512,
+      "mode": "auto"
+    },
+    {
+      "id": 5,
+      "x": 432.1327009015403,
+      "y": 47.410109963924675,
+      "mode": "auto"
+    },
+    {
+      "id": 6,
+      "x": 525.8743038242097,
+      "y": -6.09959836867619,
+      "mode": "auto"
+    },
+    {
+      "id": 7,
+      "x": 631.480862848219,
+      "y": -38.203104347085166,
+      "mode": "auto"
+    },
+    {
+      "id": 8,
+      "x": 701.0681717382131,
+      "y": 42.375642663042825,
+      "mode": "auto"
+    },
+    {
+      "id": 9,
+      "x": 791.290608025757,
+      "y": -39.391644061259754,
+      "mode": "auto"
+    },
+    {
+      "id": 10,
+      "x": 899.5116305442116,
+      "y": -11.593165417012369,
+      "mode": "right"
+    }
+  ],
+  "drag": {
+    "pin": 5,
+    "dx": -91.7130790379425,
+    "dy": -21.719390699509244,
+    "moves": 60,
+    "iterationsPerMove": 3
+  },
+  "outcome": {
+    "status": "stalled",
+    "problems": ["ended \"stalled\"", "took 3001 iterations to settle"],
+    "iterationsToSettle": 3001,
+    "pinsAfterDrag": [
+      {
+        "id": 1,
+        "x": 102.30273346523882,
+        "y": -47.44831216402739,
+        "mode": "auto"
+      },
+      {
+        "id": 2,
+        "x": 187.77204097610527,
+        "y": 3.314168915764504,
+        "mode": "auto"
+      },
+      {
+        "id": 3,
+        "x": 259.5389523634403,
+        "y": 33.09960867422615,
+        "mode": "auto"
+      },
+      {
+        "id": 4,
+        "x": 341.1826248565608,
+        "y": 31.504489845365512,
+        "mode": "auto"
+      },
+      {
+        "id": 5,
+        "x": 340.4196218635978,
+        "y": 25.69071926441543,
+        "mode": "auto"
+      },
+      {
+        "id": 6,
+        "x": 525.8743038242097,
+        "y": -6.09959836867619,
+        "mode": "auto"
+      },
+      {
+        "id": 7,
+        "x": 631.480862848219,
+        "y": -38.203104347085166,
+        "mode": "auto"
+      },
+      {
+        "id": 8,
+        "x": 701.0681717382131,
+        "y": 42.375642663042825,
+        "mode": "auto"
+      },
+      {
+        "id": 9,
+        "x": 791.290608025757,
+        "y": -39.391644061259754,
+        "mode": "auto"
+      },
+      {
+        "id": 10,
+        "x": 899.5116305442116,
+        "y": -11.593165417012369,
+        "mode": "right"
+      }
+    ]
+  }
+}

@@ -1,0 +1,4807 @@
+<!doctype html>
+<!--
+ * Copyright (c) Jethro G. Beekman
+ * 
+ * This program is free software: you can redistribute it and/or modify it 
+ * under the terms of the GNU General Public License as published by the Free 
+ * Software Foundation, either version 3 of the License, or (at your option) 
+ * any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT 
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or 
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for 
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along with 
+ * this program. If not, see <https://www.gnu.org/licenses/>. 
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spring Strip Jig</title>
+<style>
+:root {
+  --bg: #e9ecef;
+  --busy-bg: #f5ddb0;
+  --problem-bg: #f3c9c4;
+  --busy-frame: #e0a63c;
+  --problem-frame: #d9534f;
+  --panel: #f8f9fa;
+  --ink: #1f2933;
+  --muted: #61707f;
+  --line: #d3d9df;
+  --wa: #ffffff;
+  --grid-minor: #e6eaee;
+  --grid-major: #c8d0d8;
+  --ruler: #f3f5f7;
+  --strip: #d8a657;
+  --strip-edge: #8a6122;
+  --centre: #4a3510;
+  --inside: #2563eb;
+  --outside: #0f9d6b;
+  --straight: #64748b;
+  --free: #7b8794;
+  --warn: #e8770c;
+  --tight: #dc2626;
+  --select: #7c3aed;
+  --through: #0e7490;
+  --accent: #2563eb;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+}
+#app { display: flex; height: 100%; width: 100%; }
+#stage { position: relative; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+/* the background outside the work area turns red when the settled result has a
+   problem, and amber (taking precedence) while the solver is still working */
+#bgfill { transition: fill .3s; }
+#stage.problem #bgfill { fill: var(--problem-bg); }
+#stage.converging #bgfill { fill: var(--busy-bg); }
+/* when zoomed in the background may be hidden: the rulers and a frame round
+   the drawing, always on screen, show the same state */
+#stage.problem { --ruler: var(--problem-bg); }
+#stage.converging { --ruler: var(--busy-bg); }
+#stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 3px transparent; transition: box-shadow .3s; }
+#stage.problem::after { box-shadow: inset 0 0 0 3px var(--problem-frame); }
+#stage.converging::after { box-shadow: inset 0 0 0 3px var(--busy-frame); }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
+#view.panning { cursor: grabbing; }
+#view.overpin { cursor: move; }
+#hud {
+  position: absolute; right: 8px; bottom: 8px; pointer-events: none;
+  background: rgba(255,255,255,.9); border: 1px solid var(--line); border-radius: 4px;
+  padding: 2px 8px; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px;
+}
+#panel {
+  flex: 0 0 312px; width: 312px; overflow-y: auto; scrollbar-gutter: stable; background: var(--panel);
+  border-left: 1px solid var(--line); padding: 10px 12px 24px;
+}
+#panel h1 { font-size: 15px; margin: 2px 0 8px; }
+#panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; font-weight: 600; }
+#panel h3 { font-size: 12px; color: var(--ink); margin: 12px 0 4px; font-weight: 600; }
+.toolbar { display: flex; gap: 4px; align-items: center; }
+.toolbar button { white-space: nowrap; padding: 4px 7px; }
+.toolbar .sep { flex: 1 1 auto; }
+.box { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; margin: 10px 0; }
+.sec { border-top: 1px solid var(--line); }
+.sec > summary {
+  cursor: pointer; list-style: none; padding: 9px 0 7px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--muted); user-select: none;
+}
+.sec > summary::-webkit-details-marker { display: none; }
+.sec > summary::before { content: "▸"; display: inline-block; width: 14px; transition: transform .15s; }
+.sec[open] > summary::before { transform: rotate(90deg); }
+.sec > :not(summary):last-child { margin-bottom: 10px; }
+.row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.row label { flex: 1 1 auto; color: var(--ink); }
+.row .unit { color: var(--muted); width: 22px; }
+.row .lbl { flex: 1 1 auto; display: flex; align-items: center; }
+.row .lbl label { flex: 0 0 auto; }
+.row .hint { margin: 0; }
+button { white-space: nowrap; }
+#ioMsg.ok { color: var(--outside); }
+#ioMsg.bad { color: var(--warn); }
+input[type=range] { width: 84px; }
+input[type=number] {
+  width: 84px; padding: 3px 5px; border: 1px solid var(--line); border-radius: 4px;
+  font: inherit; font-variant-numeric: tabular-nums; background: #fff; color: var(--ink);
+}
+input[type=number]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input:disabled { background: var(--panel); color: var(--muted); }
+button {
+  font: inherit; padding: 4px 9px; border: 1px solid var(--line); border-radius: 4px;
+  background: #fff; color: var(--ink); cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: #9aa5b1; }
+button:disabled { opacity: .45; cursor: default; }
+button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 4px 4px 0; }
+.seg.modes { width: 100%; }
+.seg.modes button { flex: 1 1 0; padding-left: 4px; padding-right: 4px; }
+/* Result and Selected pin keep a fixed layout: no row appears, disappears or wraps */
+dl.read { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; margin: 0; font-variant-numeric: tabular-nums; }
+dl.read dt { color: var(--muted); white-space: nowrap; }
+dl.read dd { margin: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.statusline { display: flex; align-items: center; height: 22px; margin-bottom: 4px; font-size: 14px; }
+#status { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#status.ok { color: var(--outside); }
+#status.busy { color: var(--muted); }
+#status.bad { color: var(--warn); font-weight: 600; }
+.pinhead { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 28px; }
+.oneline { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 18px; }
+.pininfo { display: flex; align-items: center; margin: 4px 0; }
+.pininfo .hint { margin: 0; min-width: 0; }
+.pininfo .info.off { visibility: hidden; }
+.info {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 15px; height: 15px; margin-left: 5px; border-radius: 50%; border: 1px solid currentColor;
+  color: var(--muted); font: italic 600 10px/1 Georgia, serif; cursor: help; vertical-align: 1px;
+}
+.info:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.info.warn { color: var(--warn); font-weight: 700; }
+#tooltip {
+  position: fixed; z-index: 50; max-width: 280px; padding: 7px 9px; border-radius: 6px;
+  background: #1f2933; color: #fff; font-size: 12px; line-height: 1.45; box-shadow: 0 4px 14px rgba(0,0,0,.2);
+  pointer-events: none; white-space: pre-line;
+}
+.hint { color: var(--muted); font-size: 12px; margin: 4px 0; }
+.chk { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
+.chk label { display: flex; align-items: center; gap: 5px; }
+.keys { margin: 4px 0; padding-left: 16px; color: var(--muted); font-size: 12px; }
+.keys li { margin: 2px 0; }
+.keys b { color: var(--ink); font-weight: 600; }
+.legend { list-style: none; margin: 4px 0; padding: 0; font-size: 12px; color: var(--muted); }
+.legend li { position: relative; padding-left: 17px; margin: 3px 0; }
+.legend b { color: var(--ink); font-weight: 600; }
+.legend i { position: absolute; left: 0; top: 3px; display: block; width: 10px; height: 10px; border-radius: 50%; }
+.legend i.ring { background: none; border: 2px solid; width: 8px; height: 8px; }
+.legend i.ring.dashed { border-style: dashed; }
+.legend i.dot { background: #fff; border: 1.5px solid var(--centre); width: 7px; height: 7px; }
+.legend i.bar { border-radius: 2px; height: 5px; top: 6px; }
+.legend i.plus { border-radius: 0; background:
+  linear-gradient(var(--tight), var(--tight)) center / 10px 2px no-repeat,
+  linear-gradient(var(--tight), var(--tight)) center / 2px 10px no-repeat; }
+#view text { font: 11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  #app { flex-direction: column; height: auto; min-height: 100%; }
+  #stage { flex: 0 0 62vh; height: 62vh; }
+  #panel { flex: 0 0 auto; width: 100%; border-left: 0; border-top: 1px solid var(--line); padding: 10px 16px 24px; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <main id="stage">
+    <svg id="view" xmlns="http://www.w3.org/2000/svg" aria-label="Jig drawing">
+      <rect id="bgfill" x="0" y="0" width="100%" height="100%" fill="var(--bg)"/>
+      <g id="world">
+        <rect id="wa-fill" fill="var(--wa)"/>
+        <image id="bgimg" preserveAspectRatio="xMidYMid meet" style="display:none"/>
+      </g>
+      <path id="grid-minor" fill="none" stroke="var(--grid-minor)" stroke-width="1" shape-rendering="crispEdges"/>
+      <path id="grid-major" fill="none" stroke="var(--grid-major)" stroke-width="1" shape-rendering="crispEdges"/>
+      <g id="world2">
+        <rect id="wa-outline" fill="none" stroke="#5b6773" stroke-width="1" vector-effect="non-scaling-stroke"/>
+        <g id="strip-layer"></g>
+        <g id="pin-layer"></g>
+      </g>
+      <g id="overlay"></g>
+      <g id="rulers"></g>
+    </svg>
+    <div id="hud"><span id="cursor">–</span></div>
+  </main>
+  <aside id="panel">
+    <div class="top">
+      <h1>Spring strip jig</h1>
+      <div class="toolbar">
+        <button id="btnUndo" title="Undo (Ctrl+Z)">Undo</button><button id="btnRedo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+        <span class="sep"></span>
+        <button id="btnFit" title="Zoom to the work area (F; F again zooms to the pins)">Fit</button><button id="btnFitPins" title="Zoom to the pins">Fit pins</button>
+        <span class="sep"></span>
+        <button id="btnClear" title="Remove all pins (can be undone)">Clear all</button>
+      </div>
+    </div>
+
+    <section class="box" aria-labelledby="hResult">
+      <h2 id="hResult">Result</h2>
+      <div class="statusline"><span id="status">–</span><span id="statusInfo" class="info" tabindex="0" role="button" aria-label="About this status">i</span></div>
+      <dl class="read">
+        <dt>Pins</dt><dd id="rPins">0</dd>
+        <dt title="Length of the strip between the first and last contact point">Contact length</dt><dd id="rLen">–</dd>
+        <dt title="Suggested blank length: the contact length plus the end overhang at both ends">Blank length</dt><dd id="rBlank">–</dd>
+        <dt title="Smallest bend radius along the strip, and the nearest pin">Min bend radius</dt><dd id="rMinR">–</dd>
+      </dl>
+    </section>
+
+    <section class="box" id="pinbox" aria-labelledby="pinName">
+      <h2>Selected pin</h2>
+      <div class="pinhead"><b id="pinName">No pin selected</b><button id="btnDel" title="Remove the pin (Delete)">Remove</button></div>
+      <div class="pininfo"><span id="pinInfo" class="hint oneline">Click a pin to select it</span><span id="pinInfoTip" class="info" tabindex="0" role="button" aria-label="About this pin">i</span></div>
+      <div class="row"><label for="inPX">X</label><input id="inPX" type="number" step="any"><span class="unit">mm</span></div>
+      <div class="row"><label for="inPY">Y</label><input id="inPY" type="number" step="any"><span class="unit">mm</span></div>
+      <div class="row"><span class="seg modes"><button id="mThrough" title="Through (T)">Through</button><button id="mAuto" title="Auto (A)">Auto</button><button id="mLeft" title="Left">Left</button><button id="mRight" title="Right">Right</button></span></div>
+    </section>
+
+    <details class="sec" data-sec="settings" open>
+      <summary>Settings</summary>
+      <h3>Work area</h3>
+      <div class="row"><label for="inW">Width</label><input id="inW" type="number" min="0" step="any"><span class="unit">mm</span></div>
+      <div class="row"><label for="inH">Height</label><input id="inH" type="number" min="0" step="any"><span class="unit">mm</span></div>
+      <div class="row"><label>Background</label><button id="btnBg">Choose image…</button><button id="btnBgRemove">Remove</button><input id="fileBg" type="file" accept="image/*" hidden></div>
+      <div class="row"><label for="inBgOpacity">Image opacity</label><input id="inBgOpacity" type="range" min="0.05" max="1" step="0.05"><span class="unit" id="bgOpacityVal"></span></div>
+      <h3>Strip and pins</h3>
+      <div class="row"><label for="inD">Pin diameter</label><input id="inD" type="number" min="0" step="any"><span class="unit">mm</span></div>
+      <div class="row"><label for="inT">Strip thickness</label><input id="inT" type="number" min="0" step="any"><span class="unit">mm</span></div>
+      <div class="row"><label for="inO">End overhang</label><input id="inO" type="number" min="0" step="any"><span class="unit">mm</span></div>
+      <div class="row"><label for="inR">Min bend radius</label><input id="inR" type="number" min="0" step="any" placeholder="off"><span class="unit">mm</span></div>
+      <p class="hint">Sections bent tighter than this are drawn red.</p>
+      <h3>Sliding out</h3>
+      <div class="row"><span class="lbl"><label for="inHold">Length limit</label><span class="info" tabindex="0" role="button" aria-label="About the length limit" data-tip="On frictionless pins some layouts have no resting shape: the strip would slide out. It is then held, at most at this multiple of the summed pin-to-pin distances, and the tool shows the friction the end pins need. The limit only applies when the strip would otherwise slide out.">i</span></span><input id="inHold" type="number" min="1" step="any"><span class="unit">×</span></div>
+    </details>
+
+    <details class="sec" data-sec="help">
+      <summary>Help</summary>
+      <h3>Pin colours</h3>
+      <ul class="legend">
+        <li><i style="background:var(--inside)"></i><b>Inside</b>: on the concave side, the strip bends round the pin</li>
+        <li><i style="background:var(--outside)"></i><b>Outside</b>: on the convex side, the pin pushes the bend</li>
+        <li><i style="background:var(--straight)"></i><b>Straight</b>: the strip is straight at the pin</li>
+        <li><i class="ring" style="border-color:var(--through)"></i><b>Through</b>: the strip passes through the pin centre</li>
+        <li><i class="ring dashed" style="border-color:var(--free)"></i><b>Released</b>: a Left/Right pin the strip does not touch (listed as a warning)</li>
+        <li><i class="ring" style="border-color:var(--warn)"></i><b>Orange ring</b>: the pin has a warning (see the Result status)</li>
+        <li><i class="ring" style="border-color:var(--select)"></i><b>Purple ring</b>: the selected pin</li>
+        <li><i class="dot"></i><b>White dot</b>: where the strip touches the pin</li>
+        <li><i class="bar" style="background:var(--tight)"></i><b>Red strip</b>: bent tighter than the minimum radius</li>
+        <li><i class="plus"></i><b>Red +</b>: where the strip bends tightest (the minimum bend radius in Result)</li>
+      </ul>
+      <h3>Pin modes</h3>
+      <ul class="keys">
+        <li><b>Through</b> (the default): the strip passes through the pin's centre, like a slotted pin or an eyelet. It slides freely and never lets go.</li>
+        <li><b>Auto</b>: the strip touches the pin on whichever side it presses against.</li>
+        <li><b>Left</b> / <b>Right</b>: the pin sits on that side of the strip, looking from pin 1 towards the last pin. It only touches when the strip presses against it, and is released otherwise.</li>
+      </ul>
+      <h3>Controls</h3>
+      <ul class="keys">
+        <li><b>Click on an empty spot</b> to add a pin; keep the button down and drag to place it. Near the strip it goes into that stretch, otherwise onto the nearer end.</li>
+        <li><b>Drag a pin</b> to move it. <b>Alt</b> turns off grid snapping.</li>
+        <li><b>Right-click</b> a pin, or press <b>Delete</b>, to remove it.</li>
+        <li><b>Double-click</b> a pin or press <b>X</b> to cycle Through → Auto → Left → Right; <b>T</b> sets Through, <b>A</b> sets Auto.</li>
+        <li><b>Arrows</b> nudge one minor grid step, <b>Shift</b> one major step.</li>
+        <li><b>Wheel</b> zooms. Pan by dragging with the middle or right button, on a ruler, or with two fingers. <b>F</b> fits the work area; pressed again, it fits the pins.</li>
+        <li><b>Ctrl+Z</b> / <b>Ctrl+Shift+Z</b> undo and redo, <b>Esc</b> deselects.</li>
+      </ul>
+    </details>
+
+    <details class="sec" data-sec="io">
+      <summary>Import / export</summary>
+      <h3>Drawing: SVG in true mm</h3>
+      <div class="chk">
+        <label><input type="checkbox" data-layer="work-area" checked>work-area</label>
+        <label><input type="checkbox" data-layer="pins" checked>pins</label>
+        <label><input type="checkbox" data-layer="pin-centres" checked>pin-centres</label>
+        <label><input type="checkbox" data-layer="strip-outline" checked>strip-outline</label>
+        <label><input type="checkbox" data-layer="strip-centreline" checked>strip-centreline</label>
+        <label><input type="checkbox" data-layer="grid">grid</label>
+        <label><input type="checkbox" data-layer="labels">labels</label>
+      </div>
+      <div class="row"><button id="btnExport" class="primary">Download SVG</button></div>
+      <h3>Pin coordinates: TSV</h3>
+      <p class="hint">One pin per line, in strip order: x and y in mm (y pointing down, as in the drawing) and optionally the mode (through, auto, left, right). Columns separated by tabs.</p>
+      <div class="row"><button id="btnExportTsv">Download TSV</button></div>
+      <h3>Open</h3>
+      <div class="row"><button id="btnOpen">Open file…</button><span class="hint">an SVG saved by this tool, or a TSV coordinate list</span><input id="fileOpen" type="file" accept=".svg,.tsv,.txt,image/svg+xml,text/tab-separated-values,text/plain" hidden></div>
+      <div id="ioMsg" class="hint oneline" role="status"></div>
+      <h3>Example</h3>
+      <div class="row"><button id="btnExample">Load example</button><span class="hint">replaces the current pins (can be undone)</span></div>
+    </details>
+  </aside>
+  <div id="tooltip" role="tooltip" hidden></div>
+</div>
+
+<script id="solver">
+/* Spring-strip solver. No DOM access: runs in the browser and in Node.
+ *
+ * An inextensible elastic strip passes a sequence of round pins. Pins are
+ * frictionless, the strip ends are free. The shape minimises ∫κ² ds subject to
+ * the strip touching each engaged pin at distance r_eff from its centre,
+ * tangentially (contact point Q = C − s·r_eff·n, n = left normal).
+ *
+ * Some layouts have no frictionless resting shape: the strip slides out
+ * through the pins. The contact-to-contact length is therefore capped at
+ * holdFactor × L_ref. While the cap is active the strip is "held": its
+ * multiplier ν is the tension that friction at the end pins must supply. The
+ * cap lets go as soon as the strip would rather be shorter, so the shape
+ * depends only on the layout, never on how it was reached.
+ *
+ * Internally everything is divided by L_ref (sum of distances between
+ * consecutive pins) and y is flipped to point up, so every tolerance below is
+ * a pure number and "left" means left on screen.
+ */
+(function (root) {
+  'use strict';
+
+  const DEG = Math.PI / 180;
+  const SEG_TARGET = 3 * DEG; // accuracy target: turn per segment
+  const M_MIN = 8;
+  const M_MAX = 64; // segments per stretch
+  const REFINE_HI = 1.5;
+  const REFINE_LO = 0.5;
+  const TOL_STEP = 1e-9; // angle step (rad) and length step (relative, see _accept)
+  const TOL_CON = 1e-9; // contact-point closure, in units of L_ref
+  const MAX_DTHETA = 0.4; // rad per Newton step
+  const H_SHRINK = 0.5;
+  const H_GROW = 2; // stretch length limits per Newton step
+  const HYST = 1e-3; // relative hysteresis for contact changes
+  // Smallest meaningful contact force, in units of bending stiffness / L_ref²:
+  // a straight strip's forces are rounding noise and must not count as pulling.
+  const FORCE_FLOOR = 1e-6;
+  const HOLD_PRESS_TOL = 0.02; // held length search: stop once the weakest contact pushes less than this (relative)
+  const HOLD_SEARCH_MAX = 60; // held length search steps per user change
+  const HOLD_PATIENCE = 4; // held length search: steps without progress before giving up
+  const HOLD_TENSION_GROWTH = 8; // held length search: give up when the hold tension grows this much (strip pulled taut)
+  const MU_INIT = 1e-3;
+  const MU_MIN = 1e-12;
+  const MU_MAX = 1e14;
+  const MU_CONVERGED = 1e-3;
+  const MAX_RETRIES = 4;
+  const MAX_ITER_SETTLE = 3000; // per user change, then "stalled"
+  const MAX_ROUNDS = 400; // contact/refine rounds per user change
+  const MAX_FLIPS = 2; // auto flips per pin before "marginal"
+  const MAX_ESCAPES = 3; // pushes off an unstable equilibrium per user change
+  const ESCAPE_DTHETA = 0.05; // that push: at most this turn (rad) on any segment
+  const ESCAPE_DH = 0.05; // and this relative change of any segment length
+  const UNSTABLE_TOL = 1e-8; // negative curvature that counts, relative to the Hessian diagonal
+  const LANCZOS_MAX = 12; // Lanczos steps when looking for the unstable direction (any negative Ritz value will do)
+
+  // ---------------------------------------------------------------- banded LU
+  // Entry (i,j) of an n×n matrix with lower bandwidth b is stored at
+  // A[i*W + (j-i+b)], W = 3b+1, so U may grow to upper bandwidth 2b under
+  // partial pivoting (row interchanges, LAPACK dgbtf2 style).
+  // rowEnd tracks the last column each row can hold a nonzero in, so rows of
+  // short stretches next to long ones are not swept over the full band.
+  function bandLU(n, b, A, perm, rowEndIn) {
+    const W = 3 * b + 1;
+    const rowEnd = rowEndIn && rowEndIn.length >= n ? rowEndIn : new Int32Array(n);
+    for (let i = 0; i < n; i++) {
+      const ri = i * W - i + b;
+      let j = Math.min(n - 1, i + b);
+      while (j > i && A[ri + j] === 0) j--;
+      rowEnd[i] = j;
+    }
+    for (let k = 0; k < n; k++) {
+      const iMax = Math.min(n - 1, k + b);
+      let p = k;
+      let best = Math.abs(A[k * W + b]);
+      for (let i = k + 1; i <= iMax; i++) {
+        const v = Math.abs(A[i * W + (k - i + b)]);
+        if (v > best) {
+          best = v;
+          p = i;
+        }
+      }
+      perm[k] = p;
+      if (!(best > 0) || !Number.isFinite(best)) return false;
+      if (p !== k) {
+        const rk = k * W - k + b;
+        const rp = p * W - p + b;
+        const jMax = Math.max(rowEnd[k], rowEnd[p]);
+        for (let j = k; j <= jMax; j++) {
+          const t = A[rk + j];
+          A[rk + j] = A[rp + j];
+          A[rp + j] = t;
+        }
+        const t = rowEnd[k];
+        rowEnd[k] = rowEnd[p];
+        rowEnd[p] = t;
+      }
+      const rk = k * W - k + b;
+      const jMax = rowEnd[k];
+      const piv = A[rk + k];
+      for (let i = k + 1; i <= iMax; i++) {
+        const ri = i * W - i + b;
+        const aik = A[ri + k];
+        if (aik === 0) continue;
+        const l = aik / piv;
+        A[ri + k] = l;
+        for (let j = k + 1; j <= jMax; j++) A[ri + j] -= l * A[rk + j];
+        if (jMax > rowEnd[i]) rowEnd[i] = jMax;
+      }
+    }
+    return true;
+  }
+
+  function bandSolve(n, b, A, perm, x) {
+    const W = 3 * b + 1;
+    for (let k = 0; k < n; k++) {
+      const p = perm[k];
+      if (p !== k) {
+        const t = x[k];
+        x[k] = x[p];
+        x[p] = t;
+      }
+      const xk = x[k];
+      if (xk !== 0) {
+        const iMax = Math.min(n - 1, k + b);
+        for (let i = k + 1; i <= iMax; i++) x[i] -= A[i * W + (k - i + b)] * xk;
+      }
+    }
+    for (let i = n - 1; i >= 0; i--) {
+      const ri = i * W - i + b;
+      const jMax = Math.min(n - 1, i + 2 * b);
+      let s = x[i];
+      for (let j = i + 1; j <= jMax; j++) s -= A[ri + j] * x[j];
+      x[i] = s / A[ri + i];
+    }
+  }
+
+  // Work done since the page (or test) started, for tests and measurements:
+  // Newton iterations of every strip, fresh candidates included, and searches
+  // that found an unstable direction, with the slowest one's time.
+  const work = { iterations: 0, searches: 0, slowestSearchMs: 0 };
+
+  // Statuses with nothing left to run until the next user change.
+  const IDLE = new Set(['converged', 'friction', 'failed', 'stalled', 'empty', 'invalid']);
+  // milliseconds (performance is looked up on each call, so tests can replace it)
+  function now() {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now();
+  }
+
+  // The largest contact force, at least FORCE_FLOOR.
+  function maxForce(F) {
+    let m = FORCE_FLOOR;
+    for (const f of F) m = Math.max(m, Math.hypot(f[0], f[1]));
+    return m;
+  }
+  // How hard force f pushes a pin on side `side` against the strip, whose
+  // tangent there is phi (> 0: it pushes, < 0: it pulls).
+  function pressOf(f, phi, side) {
+    return -side * (f[0] * -Math.sin(phi) + f[1] * Math.cos(phi));
+  }
+
+  function dot(u, v) {
+    let s = 0;
+    for (let i = 0; i < u.length; i++) s += u[i] * v[i];
+    return s;
+  }
+
+  // 1 for the multiplier unknowns (λx, λy of each stretch), 0 for angles and lengths.
+  function dualMask(L) {
+    const dual = new Uint8Array(L.n);
+    for (let k = 0; k < L.K; k++) {
+      const ih = iH(L, k);
+      dual[ih + 1] = 1;
+      dual[ih + 2] = 1;
+    }
+    return dual;
+  }
+
+  // A fixed pseudo-random vector on the angles and lengths, the same on every run.
+  function startVector(dual) {
+    let seed = 1;
+    const v = new Float64Array(dual.length);
+    for (let i = 0; i < v.length; i++) {
+      if (!dual[i]) {
+        seed = (seed * 16807) % 2147483647;
+        v[i] = seed / 2147483647 - 0.5;
+      }
+    }
+    return v;
+  }
+
+  // Make w orthogonal to the vectors in Q (twice, for rounding).
+  function reorthogonalise(w, Q) {
+    for (let pass = 0; pass < 2; pass++) {
+      for (const qu of Q) {
+        const c = dot(qu, w);
+        for (let i = 0; i < w.length; i++) w[i] -= c * qu[i];
+      }
+    }
+  }
+
+  // Lanczos with full reorthogonalisation on the symmetric operator op, from v0.
+  // Returns the most negative Ritz value and its vector, or null if none is negative.
+  function lowestRitz(op, v0, steps) {
+    let q = op(v0);
+    const q0 = Math.sqrt(dot(q, q));
+    if (!(q0 > 0) || !Number.isFinite(q0)) return null;
+    q = q.map((v) => v / q0);
+    const Q = [];
+    const al = [];
+    const be = [];
+    const w = new Float64Array(v0.length);
+    for (let j = 0; j < steps; j++) {
+      Q.push(q);
+      op(q, w);
+      al.push(dot(q, w));
+      reorthogonalise(w, Q);
+      const bn = Math.sqrt(dot(w, w));
+      if (!(bn > 1e-10 * Math.abs(al[j]))) break;
+      be.push(bn);
+      q = w.map((v) => v / bn);
+    }
+    const { values, vectors } = symEig(tridiagonal(al, be));
+    let imin = 0;
+    for (let i = 1; i < values.length; i++) if (values[i] < values[imin]) imin = i;
+    if (!(values[imin] < 0)) return null;
+    const y = new Float64Array(v0.length);
+    for (let i = 0; i < Q.length; i++) {
+      const c = vectors[i][imin];
+      for (let t = 0; t < y.length; t++) y[t] += c * Q[i][t];
+    }
+    return { value: values[imin], vector: y };
+  }
+
+  // The symmetric tridiagonal matrix with diagonal al and off-diagonal be.
+  function tridiagonal(al, be) {
+    const k = al.length;
+    return Array.from({ length: k }, (_, i) => {
+      const r = new Float64Array(k);
+      r[i] = al[i];
+      if (i > 0) r[i - 1] = be[i - 1];
+      if (i + 1 < k) r[i + 1] = be[i];
+      return r;
+    });
+  }
+
+  // steps of (shifted) inverse iteration y ← op(y)/|op(y)|; null if it breaks down.
+  function inverseIteration(op, y0, steps) {
+    let y = y0;
+    for (let it = 0; it < steps; it++) {
+      y = op(y);
+      const yn = Math.sqrt(dot(y, y));
+      if (!(yn > 0) || !Number.isFinite(yn)) return null;
+      for (let i = 0; i < y.length; i++) y[i] /= yn;
+    }
+    return y;
+  }
+
+  // A·v for a band matrix as assembled (before factorising: bandwidth b both ways).
+  function bandMul(n, b, A, v) {
+    const W = 3 * b + 1;
+    const out = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      let s = 0;
+      for (let j = Math.max(0, i - b), jm = Math.min(n - 1, i + b); j <= jm; j++) {
+        s += A[i * W + (j - i + b)] * v[j];
+      }
+      out[i] = s;
+    }
+    return out;
+  }
+
+  // Eigenvalues and eigenvectors (columns of vectors) of a small symmetric
+  // matrix, by Jacobi rotations.
+  function symEig(A0) {
+    const k = A0.length;
+    const A = A0.map((r) => Float64Array.from(r));
+    const V = Array.from({ length: k }, (_, i) => {
+      const r = new Float64Array(k);
+      r[i] = 1;
+      return r;
+    });
+    for (let sweep = 0; sweep < 50; sweep++) {
+      let off = 0;
+      let tot = 0;
+      for (let i = 0; i < k; i++) {
+        for (let j = 0; j < k; j++) {
+          const v = A[i][j] * A[i][j];
+          tot += v;
+          if (i !== j) off += v;
+        }
+      }
+      if (!(off > 1e-28 * tot)) break;
+      for (let p = 0; p < k; p++) {
+        for (let q = p + 1; q < k; q++) {
+          const apq = A[p][q];
+          if (apq === 0) continue;
+          const th = (A[q][q] - A[p][p]) / (2 * apq);
+          const t = (th >= 0 ? 1 : -1) / (Math.abs(th) + Math.sqrt(th * th + 1));
+          const c = 1 / Math.sqrt(t * t + 1);
+          const s = t * c;
+          for (let r = 0; r < k; r++) {
+            const a = A[r][p];
+            const e = A[r][q];
+            A[r][p] = c * a - s * e;
+            A[r][q] = s * a + c * e;
+          }
+          for (let r = 0; r < k; r++) {
+            const a = A[p][r];
+            const e = A[q][r];
+            A[p][r] = c * a - s * e;
+            A[q][r] = s * a + c * e;
+          }
+          for (let r = 0; r < k; r++) {
+            const a = V[r][p];
+            const e = V[r][q];
+            V[r][p] = c * a - s * e;
+            V[r][q] = s * a + c * e;
+          }
+        }
+      }
+    }
+    return { values: A.map((r, i) => r[i]), vectors: V };
+  }
+
+  // ------------------------------------------------------------ discretisation
+  // Unknowns are stored stretch by stretch: θ_k,0..a-1, h_k, λx_k, λy_k,
+  // θ_k,a..m-1 with a = floor(m/2). Keeping h and λ mid-block keeps the
+  // couplings inside a stretch within about m/2 of the diagonal, but the bending
+  // term at a pin, 2D²/(h_k-1 + h_k), couples neighbouring h's, so the band is
+  // about (m_k-1 + m_k)/2 + 3.
+  function makeLayout(m) {
+    const K = m.length;
+    const base = new Int32Array(K);
+    const a = new Int32Array(K);
+    let n = 0;
+    for (let k = 0; k < K; k++) {
+      base[k] = n;
+      a[k] = m[k] >> 1;
+      n += m[k] + 3;
+    }
+    return { K, m: Int32Array.from(m), base, a, n };
+  }
+  function iTh(L, k, j) {
+    return L.base[k] + j + (j < L.a[k] ? 0 : 3);
+  }
+  function iH(L, k) {
+    return L.base[k] + L.a[k];
+  }
+
+  // Node tangent at engaged pin i: weights over θ indices.
+  function nodeWeights(L, i) {
+    const K = L.K;
+    if (i === 0) return [[iTh(L, 0, 0), 1]];
+    if (i === K) return [[iTh(L, K - 1, L.m[K - 1] - 1), 1]];
+    return [
+      [iTh(L, i - 1, L.m[i - 1] - 1), 0.5],
+      [iTh(L, i, 0), 0.5],
+    ];
+  }
+
+  // Evaluate the Lagrangian. P: {L, C (Float64Array 2(K+1)), s (Int8Array), r, tau}.
+  // tau is the hold multiplier ν (a uniform tension), 0 when the length is free.
+  // addS(i,j,v) accumulates symmetric Hessian entries (or null).
+  // Returns {E, len, con (max |c_k|), conSum (Σ|c_k|), lamMax, phi, Q}. Fills g if given.
+  // The terms are added to one accumulator, ev, always in the same order.
+  function evaluate(P, x, g, addS) {
+    const K = P.L.K;
+    if (g) g.fill(0);
+    const ev = { P, x, g, addS, E: 0, len: 0, conMax: 0, conSum: 0 };
+    const { phi, Q, W } = contactPoints(P, x);
+    for (let k = 0; k < K; k++) stretchTerms(ev, k, Q);
+    for (let i = 0; i <= K; i++) contactTerms(ev, i, phi[i], W[i]);
+    return {
+      E: ev.E,
+      len: ev.len,
+      con: ev.conMax,
+      conSum: ev.conSum,
+      lamMax: maxMultiplier(P.L, x),
+      phi,
+      Q,
+    };
+  }
+
+  // Node tangent φ_i and contact point Q_i = C_i − s_i·r·n(φ_i) at each engaged pin,
+  // and the weights giving φ_i from the angles.
+  function contactPoints(P, x) {
+    const { L, C, s, r } = P;
+    const K = L.K;
+    const phi = new Float64Array(K + 1);
+    const Q = new Float64Array(2 * (K + 1));
+    const W = [];
+    for (let i = 0; i <= K; i++) {
+      const w = nodeWeights(L, i);
+      W.push(w);
+      let f = 0;
+      for (const [idx, wt] of w) f += wt * x[idx];
+      phi[i] = f;
+      Q[2 * i] = C[2 * i] + s[i] * r * Math.sin(f);
+      Q[2 * i + 1] = C[2 * i + 1] - s[i] * r * Math.cos(f);
+    }
+    return { phi, Q, W };
+  }
+
+  // Bending energy c·D²/S between neighbouring segment angles iA and iB, with
+  // its gradient and Hessian. Within a stretch S = h1 and c = 1 (h2 < 0); at a
+  // pin S = h1 + h2, the two stretches' segment lengths, and c = 2.
+  function joint(ev, iA, iB, h1, h2) {
+    const { x, g, addS } = ev;
+    const c = h2 < 0 ? 1 : 2;
+    const D = x[iB] - x[iA];
+    const S = h2 < 0 ? x[h1] : x[h1] + x[h2];
+    ev.E += (c * D * D) / S;
+    if (g) {
+      const gd = (2 * c * D) / S;
+      const gh = (-c * D * D) / (S * S);
+      g[iB] += gd;
+      g[iA] -= gd;
+      g[h1] += gh;
+      if (h2 >= 0) g[h2] += gh;
+    }
+    if (!addS) return;
+    const k2 = (2 * c) / S;
+    const kdh = (2 * c * D) / (S * S);
+    const khh = (2 * c * D * D) / (S * S * S);
+    addS(iA, iA, k2);
+    addS(iB, iB, k2);
+    addS(iA, iB, -k2);
+    addS(iB, h1, -kdh);
+    addS(iA, h1, kdh);
+    addS(h1, h1, khh);
+    if (h2 >= 0) {
+      addS(iB, h2, -kdh);
+      addS(iA, h2, kdh);
+      addS(h2, h2, khh);
+      addS(h1, h2, khh);
+    }
+  }
+
+  // Stretch k: bending within it and at the pin before it, its length (with the
+  // hold tension), and its closure constraint.
+  function stretchTerms(ev, k, Q) {
+    const { P, x, g } = ev;
+    const L = P.L;
+    const m = L.m[k];
+    const ih = iH(L, k);
+    for (let j = 1; j < m; j++) joint(ev, iTh(L, k, j - 1), iTh(L, k, j), ih, -1);
+    if (k > 0) joint(ev, iTh(L, k - 1, L.m[k - 1] - 1), iTh(L, k, 0), iH(L, k - 1), ih);
+    ev.len += m * x[ih];
+    if (g) g[ih] += P.tau * m;
+    closure(ev, k, Q);
+  }
+
+  // The closure constraint c_k = h Σ u(θ) − Q_{k+1} + Q_k with multiplier λ_k.
+  function closure(ev, k, Q) {
+    const { P, x, g, addS } = ev;
+    const L = P.L;
+    const m = L.m[k];
+    const ih = iH(L, k);
+    const lx = ih + 1;
+    const ly = ih + 2;
+    const h = x[ih];
+    const lamx = x[lx];
+    const lamy = x[ly];
+    let Sx = 0;
+    let Sy = 0;
+    for (let j = 0; j < m; j++) {
+      const it = iTh(L, k, j);
+      const th = x[it];
+      const ct = Math.cos(th);
+      const st = Math.sin(th);
+      Sx += ct;
+      Sy += st;
+      if (g) g[it] += h * (-lamx * st + lamy * ct);
+      if (addS) {
+        addS(it, it, h * (-lamx * ct - lamy * st));
+        addS(it, ih, -lamx * st + lamy * ct);
+        addS(it, lx, -h * st);
+        addS(it, ly, h * ct);
+      }
+    }
+    const cx = h * Sx - Q[2 * k + 2] + Q[2 * k];
+    const cy = h * Sy - Q[2 * k + 3] + Q[2 * k + 1];
+    if (g) {
+      g[ih] += lamx * Sx + lamy * Sy;
+      g[lx] = cx;
+      g[ly] = cy;
+    }
+    if (addS) {
+      addS(ih, lx, Sx);
+      addS(ih, ly, Sy);
+    }
+    const cn = Math.hypot(cx, cy);
+    ev.conSum += cn;
+    if (cn > ev.conMax) ev.conMax = cn;
+  }
+
+  // Contact point i: G_i·Q_i(φ_i) with G_i = λ_i − λ_{i−1}.
+  function contactTerms(ev, i, f, w) {
+    const { P, x, g, addS } = ev;
+    const L = P.L;
+    const K = L.K;
+    const sr = P.s[i] * P.r;
+    const dQx = sr * Math.cos(f);
+    const dQy = sr * Math.sin(f); // Q'
+    const ddQx = -sr * Math.sin(f);
+    const ddQy = sr * Math.cos(f); // Q''
+    // the multipliers of the stretches after (+) and before (−) the contact
+    const sides = [];
+    if (i < K) sides.push([iH(L, i), 1]);
+    if (i > 0) sides.push([iH(L, i - 1), -1]);
+    let Gx = 0;
+    let Gy = 0;
+    for (const [ih, sg] of sides) {
+      Gx += sg * x[ih + 1];
+      Gy += sg * x[ih + 2];
+    }
+    if (g) for (const [idx, wt] of w) g[idx] += wt * (Gx * dQx + Gy * dQy);
+    if (!addS) return;
+    const curv = Gx * ddQx + Gy * ddQy;
+    for (let p = 0; p < w.length; p++) {
+      for (let q = p; q < w.length; q++) addS(w[p][0], w[q][0], w[p][1] * w[q][1] * curv);
+      const [idx, wt] = w[p];
+      for (const [ih, sg] of sides) {
+        addS(idx, ih + 1, sg * wt * dQx);
+        addS(idx, ih + 2, sg * wt * dQy);
+      }
+    }
+  }
+
+  function maxMultiplier(L, x) {
+    let lamMax = 0;
+    for (let k = 0; k < L.K; k++) {
+      const ih = iH(L, k);
+      lamMax = Math.max(lamMax, Math.hypot(x[ih + 1], x[ih + 2]));
+    }
+    return lamMax;
+  }
+
+  // Initial unknowns from the stretch guesses: segment angles (unwrapped along
+  // the whole strip), segment lengths and internal forces.
+  function initialUnknowns(L, C, guesses) {
+    const x = new Float64Array(L.n);
+    let prevAng = null;
+    for (let k = 0; k < L.K; k++) {
+      const { sp, lam } = guesses[k];
+      const m = L.m[k];
+      let tot = 0;
+      const fallback = Math.atan2(C[2 * k + 3] - C[2 * k + 1], C[2 * k + 2] - C[2 * k]);
+      for (let j = 0; j < m; j++) {
+        const dx = sp[j + 1][0] - sp[j][0];
+        const dy = sp[j + 1][1] - sp[j][1];
+        const l = Math.hypot(dx, dy);
+        tot += l;
+        const keep = prevAng === null ? fallback : prevAng; // a zero-length segment keeps the direction
+        let a = l > 0 ? Math.atan2(dy, dx) : keep;
+        if (prevAng !== null) a = prevAng + wrapPi(a - prevAng);
+        x[iTh(L, k, j)] = a;
+        prevAng = a;
+      }
+      const ih = iH(L, k);
+      x[ih] = Math.max(tot / m, 1e-9);
+      x[ih + 1] = lam[0];
+      x[ih + 2] = lam[1];
+    }
+    return x;
+  }
+
+  function bandwidthOf(P, x) {
+    let b = 1;
+    evaluate(P, x, null, (i, j) => {
+      const d = Math.abs(i - j);
+      if (d > b) b = d;
+    });
+    return b;
+  }
+
+  // -------------------------------------------------------------- geometry
+  function cumLen(pts) {
+    const c = new Float64Array(pts.length);
+    for (let i = 1; i < pts.length; i++) {
+      c[i] = c[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    }
+    return c;
+  }
+  function segIndexAt(cum, t) {
+    let lo = 0;
+    let hi = cum.length - 1;
+    if (t <= cum[0]) return 0;
+    if (t >= cum[hi]) return Math.max(0, hi - 1);
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (cum[mid] <= t) lo = mid;
+      else hi = mid;
+    }
+    return lo;
+  }
+  function pointAt(pts, cum, t) {
+    const i = segIndexAt(cum, t);
+    const l = cum[i + 1] - cum[i];
+    const u = l > 0 ? Math.min(1, Math.max(0, (t - cum[i]) / l)) : 0;
+    return [
+      pts[i][0] + u * (pts[i + 1][0] - pts[i][0]),
+      pts[i][1] + u * (pts[i + 1][1] - pts[i][1]),
+    ];
+  }
+  function dirAt(pts, cum, t) {
+    const i = segIndexAt(cum, t);
+    let dx = pts[i + 1][0] - pts[i][0];
+    let dy = pts[i + 1][1] - pts[i][1];
+    // at a vertex, average the two neighbouring directions
+    const eps = 1e-12 * (cum[cum.length - 1] || 1);
+    if (Math.abs(t - cum[i]) <= eps && i > 0) {
+      const l1 = Math.hypot(dx, dy);
+      const px = pts[i][0] - pts[i - 1][0];
+      const py = pts[i][1] - pts[i - 1][1];
+      const l0 = Math.hypot(px, py);
+      if (l0 > 0 && l1 > 0) {
+        dx = dx / l1 + px / l0;
+        dy = dy / l1 + py / l0;
+      }
+    } else if (Math.abs(t - cum[i + 1]) <= eps && i + 2 < pts.length) {
+      const l1 = Math.hypot(dx, dy);
+      const nx = pts[i + 2][0] - pts[i + 1][0];
+      const ny = pts[i + 2][1] - pts[i + 1][1];
+      const l2 = Math.hypot(nx, ny);
+      if (l2 > 0 && l1 > 0) {
+        dx = dx / l1 + nx / l2;
+        dy = dy / l1 + ny / l2;
+      }
+    }
+    const l = Math.hypot(dx, dy);
+    return l > 0 ? [dx / l, dy / l] : [1, 0];
+  }
+  // Closest point on the polyline to [px, py], with parameter in [t0, t1].
+  function project(pts, cum, [px, py], t0, t1) {
+    let best = Infinity;
+    let bt = Math.max(t0, cum[0]);
+    const i0 = segIndexAt(cum, Math.max(t0, cum[0]));
+    const i1 = segIndexAt(cum, Math.min(t1, cum[cum.length - 1]));
+    for (let i = i0; i <= i1; i++) {
+      const ax = pts[i][0];
+      const ay = pts[i][1];
+      const dx = pts[i + 1][0] - ax;
+      const dy = pts[i + 1][1] - ay;
+      const l2 = dx * dx + dy * dy;
+      const u = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+      let t = cum[i] + u * (cum[i + 1] - cum[i]);
+      t = Math.min(Math.max(t, t0, cum[i]), t1, cum[i + 1]);
+      const q = pointAt(pts, cum, t);
+      const d = Math.hypot(px - q[0], py - q[1]);
+      if (d < best) {
+        best = d;
+        bt = t;
+      }
+    }
+    return { t: bt, d: best };
+  }
+  function turnOf(pts, cum, t0, t1) {
+    const i0 = segIndexAt(cum, t0);
+    const i1 = segIndexAt(cum, t1);
+    let turn = 0;
+    let prev = null;
+    for (let i = i0; i <= i1; i++) {
+      const dx = pts[i + 1][0] - pts[i][0];
+      const dy = pts[i + 1][1] - pts[i][1];
+      if (dx === 0 && dy === 0) continue;
+      const a = Math.atan2(dy, dx);
+      if (prev !== null) turn += Math.abs(wrapPi(a - prev));
+      prev = a;
+    }
+    return turn;
+  }
+  function wrapPi(a) {
+    return a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+  }
+  function clampM(m) {
+    return Math.min(M_MAX, Math.max(M_MIN, m));
+  }
+  function segsForTurn(turn) {
+    return clampM(Math.ceil(turn / SEG_TARGET - 1e-9));
+  }
+  function cross(ax, ay, bx, by) {
+    return ax * by - ay * bx;
+  }
+  function sgn(v) {
+    return v < 0 ? -1 : 1;
+  }
+  // Pin modes: 'auto' (touches, side chosen by the contact force), 'left' and
+  // 'right' (one-sided: touches only when pressed against), 'through' (the
+  // centreline passes through the pin centre: never lets go, slides freely).
+  // The side a pin touches: fixed for Through (none), Left and Right, else as given.
+  function modeSide(mode, side) {
+    if (mode === 'through') return 0;
+    if (mode === 'left') return 1;
+    if (mode === 'right') return -1;
+    return side || 1;
+  }
+  function sided(p) {
+    return p.mode === 'left' || p.mode === 'right';
+  }
+
+  // Neighbouring pins at the same position (within tol) act as one pin, the
+  // first of them: a stretch between them would have no length. They can share
+  // a contact when all are Through, or none is and they are not both Left and
+  // Right; the one pin then has that shared mode. Pins that cannot share a
+  // contact are kept apart and reported in invalid.
+  // Returns {pins, leadOf (id -> id of the pin it acts as), invalid: [{a, b, why}]}.
+  function groupPins(list, tol) {
+    const pins = [];
+    const leadOf = new Map();
+    const invalid = [];
+    for (let i = 0; i < list.length;) {
+      const q = list[i];
+      let j = i + 1;
+      while (j < list.length && Math.hypot(list[j].x - q.x, list[j].y - q.y) <= tol) j++;
+      const run = list.slice(i, j);
+      const modes = run.map((p) => p.mode || 'auto');
+      i = j;
+      if (run.length === 1) {
+        pins.push(q);
+        continue;
+      }
+      const iThrough = modes.indexOf('through');
+      const iOther = modes.findIndex((m) => m !== 'through');
+      const iLeft = modes.indexOf('left');
+      const iRight = modes.indexOf('right');
+      let conflict = null;
+      if (iThrough >= 0 && iOther >= 0) conflict = [iThrough, iOther, 'through'];
+      else if (iLeft >= 0 && iRight >= 0) conflict = [iLeft, iRight, 'sides'];
+      if (conflict) {
+        const [u, v, why] = conflict;
+        invalid.push({ a: run[Math.min(u, v)].id, b: run[Math.max(u, v)].id, why });
+        for (const p of run) pins.push(p);
+        continue;
+      }
+      let mode = 'auto';
+      if (iThrough >= 0) mode = 'through';
+      else if (iLeft >= 0) mode = 'left';
+      else if (iRight >= 0) mode = 'right';
+      pins.push(Object.assign({}, q, { mode }));
+      for (const p of run.slice(1)) leadOf.set(p.id, q.id);
+    }
+    return { pins, leadOf, invalid };
+  }
+
+  // ------------------------------------------------------------------ data
+  /**
+   * A pin as given, in sequence order: mm, y down. side and engaged are only
+   * read for pins the solver has not seen (restoring a saved state).
+   * @typedef {object} PinInput
+   * @property {number} id
+   * @property {number} x
+   * @property {number} y
+   * @property {'auto'|'left'|'right'|'through'} [mode]
+   * @property {-1|0|1} [side]  1 left, -1 right, 0 Through
+   * @property {boolean} [engaged]
+   */
+  /**
+   * The discretised problem for one set of engaged pins, in normalised units
+   * (lengths ÷ L_ref, y up). Built by _makeProblem with every field it has.
+   * @typedef {object} Problem
+   * @property {{K: number, m: Int32Array, base: Int32Array, a: Int32Array, n: number}} L  unknowns per stretch (makeLayout)
+   * @property {Float64Array} C  engaged pin centres, x, y pairs
+   * @property {Int8Array} s  the sides they touch
+   * @property {number} r  contact offset r_eff
+   * @property {number} tau  the hold multiplier ν while held, else 0
+   * @property {number} cap  the length limit
+   * @property {{Lref: number, ox: number, oy: number}} N  the normalisation
+   * @property {number[]} eng  indices of the engaged pins in Strip.pins
+   * @property {number[]} engIds  their ids
+   * @property {string} sig  the layout it was built for (Strip._signature)
+   * @property {boolean} noHold  the contact geometry alone fixes the length
+   * @property {number} b  bandwidth (W = 3b + 1 entries per stored row)
+   * @property {number} W
+   * @property {number} bz  bᵀK⁻¹b for the bordered length row
+   * @property {Float64Array} A  the Hessian, band storage; Aw its damped factorisation
+   * @property {Float64Array} Aw
+   */
+  /**
+   * One pin in result(): mm, y down.
+   * @typedef {object} PinResult
+   * @property {number} id
+   * @property {string} mode
+   * @property {number} side
+   * @property {boolean} engaged
+   * @property {string} [label]  'inside' | 'outside' | 'straight' | 'through' | 'free'
+   * @property {number[]} [contact]  where the strip touches it
+   * @property {number} [force]  its load, relative to the largest (0–1)
+   * @property {number[]} [forceVec]
+   * @property {number} [press]  > 0 when it pushes on the strip
+   * @property {number} [muReq]  friction needed, at the ends of a held strip
+   * @property {string[]} warnings  'wrap' | 'liftoff' | 'marginal' | 'duplicate' | 'overlap'
+   * @property {number[]} [sameAs]  pins at the same position (they act as one)
+   * @property {number[]} [overlaps]  pins closer than the pin diameter
+   */
+  /**
+   * The shape and its readouts: mm, y down.
+   * @typedef {object} Result
+   * @property {string} status  'empty' | 'converging' | 'converged' | 'friction' (held) | 'failed' | 'stalled' | 'invalid'
+   * @property {boolean} held  the length is held at a limit (it would slide out)
+   * @property {boolean} heldBelowLimit
+   * @property {number} muReq  the friction the end pins need, when held
+   * @property {number[][]} nodes  the centreline
+   * @property {number[]} tangents  at the nodes, radians
+   * @property {number[]} curvature  at the nodes, 1/mm, positive turning left on screen
+   * @property {number} length  between the end contacts
+   * @property {number} minRadius
+   * @property {?number[]} minRadiusAt
+   * @property {boolean} stale  the shape was solved for an earlier layout
+   * @property {boolean} unstable  an unstable equilibrium that could not be left
+   * @property {{a: number, b: number, why: string}[]} invalid  pins at one position that cannot share a contact
+   * @property {PinResult[]} pins  one per pin as given
+   */
+  /**
+   * Enough to rebuild the same shape (getState, setState).
+   * @typedef {object} State
+   * @property {PinInput[]} pins
+   * @property {?{nodes: number[][], params: Array, stretches: Array}} shape  a starting point, or null
+   * @property {{d?: number, t?: number, holdFactor?: number}} [settings]  for setState
+   */
+
+  // ------------------------------------------------------------------ Strip
+  class Strip {
+    constructor(settings) {
+      this.settings = { d: 6, t: 3, holdFactor: 2 };
+      this.userPins = []; // the pins as given: [{id,x,y,mode}]
+      this.leadOf = new Map(); // id of a pin at the same position as the one before it -> that pin's id
+      this.invalid = []; // [{a, b, why}]: pins at the same position that cannot share a contact
+      this.posTol = 0; // distance (mm) below which pins count as at the same position
+      this.pins = []; // [{id,x,y,mode,side,engaged,flips,marginal,events}], one per position
+      this.prob = null; // current discretised problem
+      this.x = null;
+      this.mu = MU_INIT;
+      this.status = 'empty';
+      this.iter = 0; // Newton iterations since last user change
+      this.rounds = 0;
+      this.totalIter = 0;
+      this.lastGood = null;
+      this.hold = false;
+      this.nu = 0; // hold multiplier, normalised
+      this.capN = null; // held length below the limit, normalised (null: at the limit)
+      this.cs = null; // held length search state
+      this.escapes = 0; // pushes off unstable equilibria since the last user change
+      this.unstable = false; // the shape is an unstable equilibrium that could not be left
+      this.iterMs = 0; // running estimate of one Newton iteration's time
+      this.resume = false; // the next run() carries on after a converged iteration
+      if (settings) this.setSettings(settings);
+    }
+
+    setSettings(st) {
+      const shape = this.prob ? this.shape() : null;
+      Object.assign(this.settings, st);
+      this._userChange();
+      this._rebuild(shape);
+      this._markStart();
+    }
+
+    get rEff() {
+      return this.settings.d / 2 + this.settings.t / 2;
+    }
+
+    // Keep the pins as given and return the ones the strip sees: one per run of
+    // neighbouring pins at the same position.
+    _group(list) {
+      for (const q of list) {
+        if (
+          typeof q.x !== 'number' ||
+          typeof q.y !== 'number' ||
+          !Number.isFinite(q.x) ||
+          !Number.isFinite(q.y)
+        ) {
+          throw new Error(`pin ${q.id}: coordinates must be finite numbers`);
+        }
+      }
+      let len = 0;
+      for (let i = 1; i < list.length; i++) {
+        len += Math.hypot(list[i].x - list[i - 1].x, list[i].y - list[i - 1].y);
+      }
+      // rounding noise (an imported coordinate list, say) still counts as the same position
+      this.posTol = 1e-6 * Math.max(len, this.rEff);
+      const g = groupPins(list, this.posTol);
+      this.userPins = list.map((q) => ({ id: q.id, x: q.x, y: q.y, mode: q.mode || 'auto' }));
+      this.leadOf = g.leadOf;
+      this.invalid = g.invalid;
+      return g.pins;
+    }
+    // The id of the pin that a given pin acts as (itself, or the pin before it at the same position).
+    _lead(id) {
+      return this.leadOf.has(id) ? this.leadOf.get(id) : id;
+    }
+
+    /** @param {PinInput[]} list  the pins in sequence order */
+    setPins(list) {
+      const old = new Map(this.pins.map((p) => [p.id, p]));
+      const shape = this.prob ? this.shape() : null;
+      const isNew = [];
+      const pins = this._group(list).map((q) => {
+        const o = old.get(q.id);
+        const p = o
+          ? Object.assign({}, o)
+          : { id: q.id, side: 1, engaged: true, flips: 0, marginal: false, events: 0, fresh: true };
+        if (!o && q.side) {
+          p.side = q.side;
+          p.fresh = false;
+        }
+        if (!o && q.engaged === false) p.engaged = false;
+        if (o && o.mode !== q.mode) p.engaged = true;
+        p.x = q.x;
+        p.y = q.y;
+        p.mode = q.mode || 'auto';
+        // fixed for Left, Right and Through; an Auto pin that was Through gets a side
+        p.side = modeSide(p.mode, p.side);
+        if (p.mode === 'through') p.engaged = true;
+        isNew.push(!o);
+        return p;
+      });
+      this.pins = pins;
+      this._userChange();
+      this._rebuild(shape, isNew);
+      this._markStart();
+    }
+
+    // A new solve: its counters, damping, fresh re-solve, held length search and
+    // escapes. The held length is searched afresh, from the limit: a length held
+    // for an earlier layout (before an edit, an undo or opening a file) no longer applies.
+    _resetProgress() {
+      this.capN = null;
+      this.iter = 0;
+      this.rounds = 0;
+      this.mu = MU_INIT;
+      this.cand = null;
+      this.candDone = false;
+      this.candKind = null;
+      this.cs = null;
+      this.escapes = 0;
+      this.unstable = false;
+      this.resume = false;
+    }
+
+    _userChange() {
+      this._resetProgress();
+      for (const p of this.pins) {
+        p.flips = 0;
+        p.events = 0;
+        p.marginal = false;
+        p.holdTried = false;
+      }
+      if (this.pins.length >= 2) this.status = 'converging';
+    }
+
+    // ----------------------------------------------------------- normalisation
+    _norm() {
+      const pins = this.pins;
+      let Lref = 0;
+      for (let i = 1; i < pins.length; i++) {
+        Lref += Math.hypot(pins[i].x - pins[i - 1].x, pins[i].y - pins[i - 1].y);
+      }
+      let ox = 0;
+      let oy = 0;
+      for (const p of pins) {
+        ox += p.x;
+        oy += p.y;
+      }
+      ox /= pins.length || 1;
+      oy /= pins.length || 1;
+      if (!(Lref > 0)) Lref = Math.max(this.rEff * 4, 1e-9);
+      return { Lref, ox, oy };
+    }
+    toN(N, x, y) {
+      return [(x - N.ox) / N.Lref, -(y - N.oy) / N.Lref];
+    }
+    fromN(N, x, y) {
+      return [N.ox + x * N.Lref, N.oy - y * N.Lref];
+    }
+
+    // ------------------------------------------------------- shape (mm, y down)
+    // Current centreline as nodes, with a parameter (arc length, mm) for every
+    // pin that lies along it and the internal force of each stretch.
+    shape() {
+      const P = this.prob;
+      const x = this.x;
+      if (!P) return null;
+      const { nodes, nodeOfPin } = this._nodesN();
+      const N = P.N;
+      const ptsMM = nodes.map((p) => this.fromN(N, p[0], p[1]));
+      const cum = cumLen(ptsMM);
+      const params = new Map();
+      P.engIds.forEach((id, i) => params.set(id, cum[nodeOfPin[i]]));
+      // released pins: project between their engaged neighbours
+      const idIndex = new Map(this.pins.map((p, i) => [p.id, i]));
+      const engIdx = P.engIds.map((id) => idIndex.get(id));
+      for (let i = 0; i < this.pins.length; i++) {
+        const p = this.pins[i];
+        if (params.has(p.id)) continue;
+        let lo = 0;
+        let hi = cum[cum.length - 1];
+        for (let e = 0; e < engIdx.length; e++) {
+          if (engIdx[e] !== undefined && engIdx[e] < i) lo = params.get(P.engIds[e]);
+          if (engIdx[e] !== undefined && engIdx[e] > i) {
+            hi = params.get(P.engIds[e]);
+            break;
+          }
+        }
+        if (engIdx[0] !== undefined && i < engIdx[0]) continue;
+        if (engIdx[engIdx.length - 1] !== undefined && i > engIdx[engIdx.length - 1]) continue;
+        params.set(p.id, project(ptsMM, cum, [p.x, p.y], lo, hi).t);
+      }
+      const stretches = [];
+      for (let k = 0; k < P.L.K; k++) {
+        const ih = iH(P.L, k);
+        const sc = 1 / (N.Lref * N.Lref);
+        stretches.push({
+          a: P.engIds[k],
+          b: P.engIds[k + 1],
+          m: P.L.m[k],
+          t0: cum[nodeOfPin[k]],
+          t1: cum[nodeOfPin[k + 1]],
+          lam: [x[ih + 1] * sc, -x[ih + 2] * sc],
+        });
+      }
+      return { nodes: ptsMM, cum, params, stretches };
+    }
+
+    // Node positions in normalised units. Each stretch starts at its contact
+    // point; any closure error is spread linearly so the drawing is continuous.
+    _nodesN() {
+      const P = this.prob;
+      const x = this.x;
+      const L = P.L;
+      const ev = evaluate(P, x, null, null);
+      const Q = ev.Q;
+      const nodes = [];
+      const nodeOfPin = [0];
+      nodes.push([Q[0], Q[1]]);
+      for (let k = 0; k < L.K; k++) {
+        const m = L.m[k];
+        const h = x[iH(L, k)];
+        let px = Q[2 * k];
+        let py = Q[2 * k + 1];
+        const raw = [];
+        for (let j = 0; j < m; j++) {
+          const th = x[iTh(L, k, j)];
+          px += h * Math.cos(th);
+          py += h * Math.sin(th);
+          raw.push([px, py]);
+        }
+        const ex = Q[2 * k + 2] - px;
+        const ey = Q[2 * k + 3] - py;
+        for (let j = 0; j < m; j++) {
+          const u = (j + 1) / m;
+          nodes.push([raw[j][0] + u * ex, raw[j][1] + u * ey]);
+        }
+        nodeOfPin.push(nodes.length - 1);
+      }
+      return { nodes, nodeOfPin, ev };
+    }
+
+    // ------------------------------------------------------------- rebuilding
+    // Build stretches for the current engaged pins from an old centreline.
+    // mOverride: Map "idA|idB" -> m (refinement).
+    _rebuild(shape, isNew, mOverride) {
+      const pins = this.pins;
+      // pins at the same position that cannot share a contact: nothing to solve
+      // (the last shape stays, marked stale, as a starting point for the next edit)
+      if (this.invalid.length) {
+        this.status = 'invalid';
+        return;
+      }
+      if (pins.length < 2) {
+        this.prob = null;
+        this.x = null;
+        this.status = 'empty';
+        return;
+      }
+      pins[0].engaged = true;
+      pins[pins.length - 1].engaged = true;
+      const N = this._norm();
+      const line = this._startLine(shape, N);
+      this._placeNewPins(line, isNew, N);
+      for (const p of pins) {
+        p.fresh = false;
+        if (p.mode === 'auto' && !p.side) p.side = 1;
+      }
+      const con = this._engagedContacts(line, N);
+      const guesses = [];
+      const ctx = { shape, line, con, mOverride, N };
+      for (let k = 0; k < con.K; k++) guesses.push(this._stretchGuess(k, ctx));
+      const L = makeLayout(guesses.map((gs) => gs.m));
+      const x = initialUnknowns(L, con.C, guesses);
+      // the hold multiplier is a force: rescale it with the normalisation
+      if (this.prob && this.hold) this.nu *= (N.Lref / this.prob.N.Lref) ** 2;
+      const P = this._makeProblem(L, x, con, N);
+      if (!x.every(Number.isFinite)) {
+        this.status = 'failed';
+        this._restoreGood();
+        return;
+      }
+      this.prob = P;
+      this.x = x;
+      this.status = 'converging';
+    }
+
+    // The line to start from, in normalised units, with the parameter (arc
+    // length) of each pin on it: the old centreline, extended to pins beyond its
+    // ends, or for a fresh start the polyline through the pin centres.
+    // Returns {pts, cum, tOf}; guesses the sides of new pins at the ends.
+    _startLine(shape, N) {
+      let line = shape && shape.nodes.length >= 2 ? this._lineFromShape(shape, N) : null;
+      if (!line) {
+        const pts = this.pins.map((p) => this.toN(N, p.x, p.y));
+        const c = cumLen(pts);
+        line = { pts, tOf: new Map(this.pins.map((p, i) => [p.id, c[i]])) };
+        this._guessSidesFresh(pts);
+      }
+      line.cum = cumLen(line.pts);
+      if (line.cum[line.cum.length - 1] === 0) {
+        line.pts = [
+          [0, 0],
+          [1e-6, 0],
+        ];
+        line.cum = cumLen(line.pts);
+      }
+      return line;
+    }
+
+    // The old centreline and its pin parameters, extended straight to the pins
+    // before its first and after its last pin; null if no pin lies on it.
+    _lineFromShape(shape, N) {
+      const pins = this.pins;
+      const pts = shape.nodes.map((p) => this.toN(N, p[0], p[1]));
+      const tOf = new Map();
+      for (const [id, t] of shape.params) tOf.set(id, t / N.Lref);
+      const first = pins.findIndex((p) => tOf.has(p.id));
+      if (first < 0) return null;
+      let last = pins.length - 1;
+      while (!tOf.has(pins[last].id)) last--;
+      const startExt = [];
+      const endExt = [];
+      for (let i = 0; i < first; i++) startExt.push(i);
+      for (let i = last + 1; i < pins.length; i++) endExt.push(i);
+      if (!startExt.length && !endExt.length) return { pts, tOf };
+      // side guesses at a newly extended end
+      if (startExt.length) this._guessSidesAtEnd(pts, tOf, startExt, true, N);
+      if (endExt.length) this._guessSidesAtEnd(pts, tOf, endExt, false, N);
+      const pre = startExt.map((i) => this.toN(N, pins[i].x, pins[i].y));
+      const post = endExt.map((i) => this.toN(N, pins[i].x, pins[i].y));
+      const all = pre.concat(pts, post);
+      let off = 0;
+      for (let i = 0; i < pre.length; i++) {
+        off += Math.hypot(all[i + 1][0] - all[i][0], all[i + 1][1] - all[i][1]);
+      }
+      for (const [id, t] of tOf) tOf.set(id, t + off);
+      const c = cumLen(all);
+      startExt.forEach((pi, i) => tOf.set(pins[pi].id, c[i]));
+      endExt.forEach((pi, i) => tOf.set(pins[pi].id, c[pre.length + pts.length + i]));
+      return { pts: all, tOf };
+    }
+
+    // Parameters for pins new mid-strip: the closest point of the line between
+    // their neighbours' parameters. A new Auto pin takes the side it lies on.
+    _placeNewPins(line, isNew, N) {
+      const { pts, cum, tOf } = line;
+      const pins = this.pins;
+      for (let i = 0; i < pins.length; i++) {
+        const p = pins[i];
+        if (tOf.has(p.id)) continue;
+        let lo = 0;
+        let hi = cum[cum.length - 1];
+        const before = this._neighbourParam(tOf, i, -1);
+        const after = this._neighbourParam(tOf, i, 1);
+        if (before !== undefined) lo = before;
+        if (after !== undefined) hi = after;
+        const c = this.toN(N, p.x, p.y);
+        const pr = project(pts, cum, c, lo, hi);
+        tOf.set(p.id, pr.t);
+        if (p.mode === 'auto' && ((isNew && isNew[i]) || p.fresh)) {
+          const q = pointAt(pts, cum, pr.t);
+          const d = dirAt(pts, cum, pr.t);
+          p.side = sgn(cross(d[0], d[1], c[0] - q[0], c[1] - q[1]));
+        }
+      }
+    }
+    // The parameter of the nearest pin before (dir −1) or after (+1) pin i that has one.
+    _neighbourParam(tOf, i, dir) {
+      for (let j = i + dir; j >= 0 && j < this.pins.length; j += dir) {
+        if (tOf.has(this.pins[j].id)) return tOf.get(this.pins[j].id);
+      }
+      return undefined;
+    }
+
+    // The engaged pins (indices eng, K stretches between them) with their
+    // centres C, sides s, parameters T and initial contact points Qs.
+    _engagedContacts(line, N) {
+      const { pts, cum, tOf } = line;
+      const pins = this.pins;
+      const r = this.rEff / N.Lref;
+      const eng = [];
+      for (let i = 0; i < pins.length; i++) if (pins[i].engaged) eng.push(i);
+      const K = eng.length - 1;
+      const C = new Float64Array(2 * (K + 1));
+      const s = new Int8Array(K + 1);
+      const T = new Float64Array(K + 1);
+      const Qs = [];
+      for (let e = 0; e <= K; e++) {
+        const p = pins[eng[e]];
+        const c = this.toN(N, p.x, p.y);
+        C[2 * e] = c[0];
+        C[2 * e + 1] = c[1];
+        s[e] = p.side;
+        T[e] = tOf.get(p.id);
+        const d = dirAt(pts, cum, T[e]);
+        Qs.push([c[0] - p.side * r * -d[1], c[1] - p.side * r * d[0]]);
+      }
+      return { eng, K, C, s, T, Qs, r };
+    }
+
+    // First guess for stretch k: its segment count m, m+1 points along the line
+    // blended to land on the contact points, and the internal force λ (from the
+    // old stretch covering its midpoint).
+    _stretchGuess(k, { shape, line, con, mOverride, N }) {
+      const { pts, cum } = line;
+      const { eng, T, Qs } = con;
+      const ida = this.pins[eng[k]].id;
+      const idb = this.pins[eng[k + 1]].id;
+      const ta = T[k];
+      const tb = T[k + 1];
+      const key = `${ida}|${idb}`;
+      const oldStr = shape ? shape.stretches : [];
+      const prev = oldStr.find((o) => o.a === ida && o.b === idb);
+      const straight = !(tb > ta);
+      let m;
+      if (mOverride && mOverride.has(key)) m = mOverride.get(key);
+      else if (prev) m = prev.m;
+      else m = straight ? M_MIN : segsForTurn(turnOf(pts, cum, ta, tb));
+      const sp = [];
+      for (let j = 0; j <= m; j++) {
+        const u = j / m;
+        sp.push(straight ? [Qs[k][0], Qs[k][1]] : pointAt(pts, cum, ta + u * (tb - ta)));
+      }
+      // blend so the ends land on the contact points
+      const dax = Qs[k][0] - sp[0][0];
+      const day = Qs[k][1] - sp[0][1];
+      const dbx = Qs[k + 1][0] - sp[m][0];
+      const dby = Qs[k + 1][1] - sp[m][1];
+      for (let j = 0; j <= m; j++) {
+        const u = j / m;
+        sp[j][0] += dax * (1 - u) + dbx * u;
+        sp[j][1] += day * (1 - u) + dby * u;
+      }
+      let lam = [0, 0];
+      if (shape) {
+        const tm = 0.5 * (ta + tb) * N.Lref;
+        const o = prev || oldStr.find((o2) => o2.t0 <= tm && tm <= o2.t1);
+        if (o && !straight) lam = [o.lam[0] * N.Lref * N.Lref, -o.lam[1] * N.Lref * N.Lref];
+      }
+      return { m, sp, lam };
+    }
+
+    // The discretised problem for layout L, with every field it will ever have.
+    _makeProblem(L, x, con, N) {
+      const { eng, C, s, r } = con;
+      const cap = Math.min(this._capLimit(), this.capN === null ? Infinity : this.capN);
+      const n = L.n;
+      const P = {
+        L,
+        C,
+        s,
+        r,
+        tau: this.hold ? this.nu : 0,
+        cap,
+        N,
+        eng,
+        engIds: eng.map((i) => this.pins[i].id),
+        sig: this._signature(),
+        noHold: false, // the contact geometry alone fixes the length: nothing to hold
+        b: 0,
+        W: 0,
+        bz: 0, // bᵀK⁻¹b for the bordered length row
+        // work arrays
+        g: new Float64Array(n),
+        dx: new Float64Array(n),
+        perm: new Int32Array(n),
+        rowEnd: new Int32Array(n),
+        zb: new Float64Array(n),
+        xt: new Float64Array(n),
+        g2: new Float64Array(n),
+        xs: new Float64Array(n),
+        soc: new Float64Array(n),
+        A: null,
+        Aw: null,
+      };
+      P.b = bandwidthOf(P, x);
+      P.W = 3 * P.b + 1;
+      P.A = new Float64Array(n * P.W);
+      P.Aw = new Float64Array(n * P.W);
+      return P;
+    }
+
+    _guessSidesFresh(pts) {
+      const pins = this.pins;
+      const n = pins.length;
+      const turnSide = new Array(n).fill(0);
+      for (let i = 1; i < n - 1; i++) {
+        const ax = pts[i][0] - pts[i - 1][0];
+        const ay = pts[i][1] - pts[i - 1][1];
+        const bx = pts[i + 1][0] - pts[i][0];
+        const by = pts[i + 1][1] - pts[i][1];
+        turnSide[i] = sgn(cross(ax, ay, bx, by));
+      }
+      for (let i = 1; i < n - 1; i++) {
+        if (pins[i].mode === 'auto' && pins[i].fresh) pins[i].side = turnSide[i];
+      }
+      if (n >= 3) {
+        // a Through neighbour has no side: use the bend direction there instead
+        if (pins[0].mode === 'auto' && pins[0].fresh) pins[0].side = -(pins[1].side || turnSide[1]);
+        if (pins[n - 1].mode === 'auto' && pins[n - 1].fresh) {
+          pins[n - 1].side = -(pins[n - 2].side || turnSide[n - 2]);
+        }
+      } else {
+        for (const p of pins) if (p.mode === 'auto' && p.fresh) p.side = 1;
+      }
+    }
+
+    // A pin added beyond an end: the old end pin turns into an interior pin.
+    _guessSidesAtEnd(pts, tOf, ext, atStart, N) {
+      const pins = this.pins;
+      const cum = cumLen(pts);
+      const oldEndIdx = atStart ? ext[ext.length - 1] + 1 : ext[0] - 1;
+      const oe = pins[oldEndIdx];
+      const t = tOf.get(oe.id);
+      const d = dirAt(pts, cum, t);
+      const newEnd = pins[atStart ? ext[ext.length - 1] : ext[0]];
+      const c0 = this.toN(N, oe.x, oe.y);
+      const c1 = this.toN(N, newEnd.x, newEnd.y);
+      let vx = c1[0] - c0[0];
+      let vy = c1[1] - c0[1];
+      if (atStart) {
+        vx = -vx;
+        vy = -vy;
+      }
+      const vl = Math.hypot(vx, vy);
+      const cr = atStart ? cross(vx, vy, d[0], d[1]) : cross(d[0], d[1], vx, vy);
+      if (oe.mode === 'auto' && vl > 0 && Math.abs(cr) > 1e-3 * vl) oe.side = sgn(cr);
+      const oeSide = oe.side || sgn(cr); // a Through pin has no side
+      for (const pi of ext) {
+        const p = pins[pi];
+        if (p.mode === 'auto' && p.fresh) {
+          p.side = vl > 0 && Math.abs(cr) > 1e-3 * vl ? -oeSide : oeSide;
+          p.fresh = false;
+        }
+      }
+    }
+
+    // The last converged shape, shown when a later solve fails. Its problem
+    // records the layout it was built for (prob.sig), so result() can tell when
+    // it belongs to an earlier layout (stale). The held length search changes
+    // prob.cap after this is saved, so the cap is kept as well.
+    _saveGood() {
+      this.lastGood = {
+        prob: this.prob,
+        x: Float64Array.from(this.x),
+        hold: this.hold,
+        nu: this.nu,
+        cap: this.prob.cap,
+        capN: this.capN,
+      };
+    }
+    _restoreGood() {
+      const g = this.lastGood;
+      if (!g) return;
+      this.prob = g.prob;
+      this.x = Float64Array.from(g.x);
+      this.hold = g.hold;
+      this.nu = g.nu;
+      this.prob.cap = g.cap;
+      this.capN = g.capN;
+    }
+    // What a shape depends on: the pins the strip sees, and the settings.
+    _signature() {
+      const st = this.settings;
+      return JSON.stringify([
+        this.pins.map((p) => [p.id, p.x, p.y, p.mode]),
+        st.d,
+        st.t,
+        st.holdFactor,
+      ]);
+    }
+
+    // ---------------------------------------------------------------- Newton
+    _assemble(x, wantH) {
+      const P = this.prob;
+      const b = P.b;
+      const W = P.W;
+      const A = P.A;
+      let addS = null;
+      if (wantH) {
+        A.fill(0);
+        addS = (i, j, v) => {
+          if (i === j) A[i * W + b] += v;
+          else {
+            A[i * W + (j - i + b)] += v;
+            A[j * W + (i - j + b)] += v;
+          }
+        };
+      }
+      return evaluate(P, x, P.g, addS);
+    }
+
+    // Length vector b (∂len/∂x: m_k at each h_k) dotted with v.
+    _bDot(v) {
+      const L = this.prob.L;
+      let s = 0;
+      for (let k = 0; k < L.K; k++) s += L.m[k] * v[iH(L, k)];
+      return s;
+    }
+
+    // z = K⁻¹b for the length row b (m_k at each h_k), with the current
+    // factorisation, into P.zb; P.bz = bᵀz.
+    _lengthRow() {
+      const P = this.prob;
+      const L = P.L;
+      const z = P.zb;
+      z.fill(0);
+      for (let k = 0; k < L.K; k++) z[iH(L, k)] = L.m[k];
+      bandSolve(L.n, P.b, P.Aw, P.perm, z);
+      P.bz = this._bDot(z);
+    }
+    // the length limit, a little above 1 × the pin-to-pin distances at least
+    _capLimit() {
+      return Math.max(this.settings.holdFactor, 1 + 1e-6);
+    }
+
+    // Solve the (damped, factorised) KKT system for rhs in place. With the hold
+    // active the system is bordered by the length constraint bᵀdx = −cL; it is
+    // solved with the band factorisation and z = K⁻¹b (P.zb). Returns dν.
+    _solveKKT(rhs, cL) {
+      const P = this.prob;
+      const n = P.L.n;
+      bandSolve(n, P.b, P.Aw, P.perm, rhs);
+      if (!this.hold) return 0;
+      const z = P.zb;
+      const bz = P.bz;
+      const dnu = (this._bDot(rhs) + cL) / bz;
+      for (let i = 0; i < n; i++) rhs[i] -= dnu * z[i];
+      return dnu;
+    }
+
+    // One damped Newton iteration. Returns 'accepted' | 'rejected' | 'converged'.
+    _iterate() {
+      work.iterations++;
+      const P = this.prob;
+      const L = P.L;
+      P.tau = this.hold ? this.nu : 0;
+      const ev0 = this._assemble(this.x, true);
+      // diagonal scale for the damping floor
+      let thDiag = 0;
+      for (let k = 0; k < L.K; k++) thDiag = Math.max(thDiag, 4 / this.x[iH(L, k)]);
+      // A rejected step raises μ and also backtracks: damping alone does not
+      // shrink the part of the step that restores the contact constraints.
+      let shrink = 1;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++, shrink *= 0.5) {
+        const res = this._attempt(ev0, thDiag, shrink);
+        if (res) return res;
+        this.mu = Math.min(this.mu * 4, MU_MAX);
+      }
+      return 'rejected';
+    }
+
+    // One attempt at a Newton step with the current damping μ, shortened by
+    // shrink. Returns 'accepted' or 'converged', or null when it fails.
+    _attempt(ev0, thDiag, shrink) {
+      const P = this.prob;
+      const mu = this.mu;
+      if (!this._factorise(mu, thDiag)) return null;
+      if (this.hold && !this._borderHold(mu)) return 'accepted';
+      const dx = P.dx;
+      for (let i = 0; i < P.L.n; i++) dx[i] = -P.g[i];
+      const dnu = this._solveKKT(dx, ev0.len - P.cap);
+      const step = this._trialPoint(dnu, shrink);
+      if (!step) return null;
+      const merit = this._merit(ev0, step.alpha, dnu);
+      const m0 = merit(ev0);
+      const tol = 1e-12 * (Math.abs(m0) + 1);
+      const trial = this._trialMerit(merit, m0, tol);
+      if (!(Number.isFinite(trial.m) && trial.m <= m0 + tol)) return null;
+      return this._accept(trial.ev, step, dnu, mu);
+    }
+
+    // Factorise the Hessian with Marquardt damping μ on the angles and lengths.
+    _factorise(mu, thDiag) {
+      const P = this.prob;
+      const { L, b, W, Aw } = P;
+      const x = this.x;
+      Aw.set(P.A);
+      for (let k = 0; k < L.K; k++) {
+        const m = L.m[k];
+        const ih = iH(L, k);
+        const h = x[ih];
+        for (let j = 0; j < m; j++) {
+          const it = iTh(L, k, j);
+          const d = Aw[it * W + b];
+          Aw[it * W + b] += mu * Math.max(Math.abs(d), 1e-6 * thDiag);
+        }
+        const d = Aw[ih * W + b];
+        // floor in the scale of ln h, so it is consistent with the θ floor
+        Aw[ih * W + b] += mu * Math.max(Math.abs(d), (1e-6 * thDiag) / (h * h));
+      }
+      return bandLU(L.n, b, Aw, P.perm, P.rowEnd);
+    }
+
+    // With the hold on, the length constraint borders the system: z = K⁻¹b.
+    // bᵀK⁻¹b is zero when the contact geometry alone fixes the length: nothing
+    // to hold. Compare with what a diagonal matrix of the same size would give,
+    // so heavy damping is not mistaken for that. Returns false, and lets go of
+    // the hold, when there is nothing to hold.
+    _borderHold(mu) {
+      const P = this.prob;
+      const { L, b, W } = P;
+      this._lengthRow();
+      let bb = 0;
+      let dmax = 0;
+      for (let k = 0; k < L.K; k++) bb += L.m[k] * L.m[k];
+      for (let i = 0; i < L.n; i++) dmax = Math.max(dmax, Math.abs(P.A[i * W + b]) * (1 + mu));
+      if (Math.abs(P.bz) > (1e-12 * bb) / dmax) return true;
+      this.hold = false;
+      this.nu = 0;
+      P.tau = 0;
+      P.noHold = true;
+      return false;
+    }
+
+    // The trial point xt = x + α·dx, with α limited so no segment length shrinks
+    // or grows too much and no angle turns too far, then shortened by shrink.
+    // Returns {alpha, dthMax}, or null if the step is not finite.
+    _trialPoint(dnu, shrink) {
+      const P = this.prob;
+      const { L, dx, xt } = P;
+      const x = this.x;
+      let alpha = 1;
+      let dthMax = 0;
+      for (let k = 0; k < L.K; k++) {
+        const m = L.m[k];
+        const ih = iH(L, k);
+        const h = x[ih];
+        const dh = dx[ih];
+        for (let j = 0; j < m; j++) dthMax = Math.max(dthMax, Math.abs(dx[iTh(L, k, j)]));
+        if (dh < 0) alpha = Math.min(alpha, ((1 - H_SHRINK) * h) / -dh);
+        else if (dh > 0) alpha = Math.min(alpha, ((H_GROW - 1) * h) / dh);
+      }
+      if (dthMax > MAX_DTHETA) alpha = Math.min(alpha, MAX_DTHETA / dthMax);
+      alpha *= shrink;
+      if (!Number.isFinite(alpha) || Number.isNaN(dthMax) || !Number.isFinite(dnu)) return null;
+      for (let i = 0; i < L.n; i++) {
+        xt[i] = x[i] + alpha * dx[i];
+        if (!Number.isFinite(xt[i])) return null;
+      }
+      return { alpha, dthMax };
+    }
+
+    // The exact-penalty merit function for this step. Its weights cap the trial
+    // multipliers, because under heavy damping Δλ can be meaningless and would
+    // freeze the iteration. The hold tension is a force like the contact
+    // multipliers, so its cap also scales with them: when the hold has just
+    // come on (ν = 0, the strip past the limit) a cap of 10 alone is below the
+    // tension needed, and every step back to the limit would be rejected.
+    _merit(ev0, alpha, dnu) {
+      const P = this.prob;
+      const { L, xt, cap } = P;
+      const lamNew = maxMultiplier(L, xt);
+      const rho = 2 * Math.max(ev0.lamMax, Math.min(lamNew, 10 * (ev0.lamMax + 1))) + 1;
+      const nuAbs = Math.abs(this.nu);
+      const nuCap = 10 * (Math.max(nuAbs, ev0.lamMax) + 1);
+      const rhoL = this.hold
+        ? 2 * Math.max(nuAbs, Math.min(Math.abs(this.nu + alpha * dnu), nuCap)) + 1
+        : 0;
+      return (ev) => ev.E + rho * ev.conSum + rhoL * Math.abs(ev.len - cap);
+    }
+
+    // The merit at the trial point. A long stretch rotated by a full Newton step
+    // leaves a second-order closure error that the merit function punishes (the
+    // Maratos effect): if the step fails, restore the constraints with the same
+    // factorisation and test again. Returns {ev, m}.
+    _trialMerit(merit, m0, tol) {
+      const P = this.prob;
+      const xt = P.xt;
+      let ev = evaluate(P, xt, P.g2, null);
+      let m = merit(ev);
+      if (Number.isFinite(m) && !(m <= m0 + tol)) {
+        P.xs.set(xt);
+        if (this._secondOrderCorrection(P.xs, ev.len - P.cap)) {
+          const ev2 = evaluate(P, P.xs, null, null);
+          const m2 = merit(ev2);
+          if (m2 < m) {
+            ev = ev2;
+            m = m2;
+            xt.set(P.xs);
+          }
+        }
+      }
+      return { ev, m };
+    }
+
+    // Take the trial point. Converged when the step, the closure errors, the
+    // length (when held) and the damping are all small. A stretch's length step
+    // counts relative to its segment length, or to 1/m (a stretch length of
+    // L_ref) when that is larger: a stretch between overlapping pins can
+    // shrink towards zero length (their contact points merging), creeping by a
+    // fixed fraction per step for ever while the shape no longer changes.
+    _accept(ev1, step, dnu, mu) {
+      const P = this.prob;
+      const { L, dx } = P;
+      const x = this.x;
+      const { alpha, dthMax } = step;
+      x.set(P.xt);
+      if (this.hold) this.nu += alpha * dnu;
+      this.mu = Math.max(this.mu / 3, MU_MIN);
+      let dhRel = 0;
+      for (let k = 0; k < L.K; k++) {
+        const ih = iH(L, k);
+        dhRel = Math.max(dhRel, Math.abs(alpha * dx[ih]) / Math.max(x[ih], 1 / L.m[k]));
+      }
+      const lenOk = !this.hold || Math.abs(ev1.len - P.cap) < TOL_CON;
+      const conv =
+        alpha * dthMax < TOL_STEP &&
+        dhRel < TOL_STEP &&
+        ev1.con < TOL_CON &&
+        lenOk &&
+        mu < MU_CONVERGED;
+      return conv ? 'converged' : 'accepted';
+    }
+
+    // Second-order correction: solve K·d = [0; −c(xt)] (and the length residual
+    // when held) with the factorisation still held in P.Aw. P.g2 holds the
+    // gradient at xt, whose λ rows are c. Adds the primal part of d to xt.
+    // Returns false if that would be unsafe.
+    _secondOrderCorrection(xt, cL) {
+      const P = this.prob;
+      const L = P.L;
+      const d = P.soc;
+      d.fill(0);
+      for (let k = 0; k < L.K; k++) {
+        const ih = iH(L, k);
+        d[ih + 1] = -P.g2[ih + 1];
+        d[ih + 2] = -P.g2[ih + 2];
+      }
+      this._solveKKT(d, cL);
+      for (let k = 0; k < L.K; k++) {
+        const ih = iH(L, k);
+        if (!(xt[ih] + d[ih] > H_SHRINK * xt[ih] && xt[ih] + d[ih] < H_GROW * xt[ih])) return false;
+        for (let j = 0; j < L.m[k]; j++) {
+          const v = d[iTh(L, k, j)];
+          if (!(Math.abs(v) <= MAX_DTHETA)) return false;
+        }
+      }
+      for (let k = 0; k < L.K; k++) {
+        const ih = iH(L, k);
+        xt[ih] += d[ih];
+        for (let j = 0; j < L.m[k]; j++) xt[iTh(L, k, j)] += d[iTh(L, k, j)];
+      }
+      return true;
+    }
+
+    // ------------------------------------------------------------- stability
+    // Newton finds any equilibrium, also an unstable one: a saddle, where some
+    // small displacement the constraints allow lowers the energy (near the
+    // slide-out limit of a hairpin, for example). A shape is a stable
+    // equilibrium when the Hessian of the Lagrangian is positive definite on the
+    // displacements the constraints allow, i.e. when the KKT matrix has exactly
+    // as many negative eigenvalues as there are constraints. The sign of its
+    // determinant, from the band LU, gives the parity of that count, which
+    // catches the usual case of one unstable direction. Shift-invert Lanczos
+    // with the same factorisation then estimates that direction's curvature,
+    // and inverse iteration shifted there finds the direction.
+    // Returns the direction (λ entries 0), or null when the shape is stable or
+    // no clearly unstable direction is found.
+    _unstableDirection() {
+      const P = this.prob;
+      const L = P.L;
+      P.tau = this.hold ? this.nu : 0;
+      this._assemble(this.x, true);
+      const dual = dualMask(L);
+      const ncon = 2 * L.K + (this.hold ? 1 : 0);
+      const odd = this._factorShifted(0, dual);
+      if (odd === null || odd === (ncon & 1)) return null;
+      // v ↦ the angle and length part of K⁻¹[v; 0]: the inverse of the Hessian
+      // restricted to the displacements the constraints allow
+      const op = (v, w) => this._reducedInverse(v, w, dual);
+      let free = -ncon;
+      for (let k = 0; k < L.K; k++) free += L.m[k] + 1;
+      const ritz = lowestRitz(op, startVector(dual), Math.min(LANCZOS_MAX, free));
+      if (!ritz) return null;
+      // the curvature along it is about 1/τ: refine by inverse iteration shifted there
+      const sigma = 1 / ritz.value;
+      if (
+        this._factorShifted(sigma, dual) === null &&
+        this._factorShifted(sigma * (1 + 1e-3), dual) === null
+      ) {
+        return null;
+      }
+      const y = inverseIteration(op, ritz.vector, 4);
+      return y && this._clearlyNegative(y, dual) ? y : null;
+    }
+
+    // Factorise K − σ·I (σ on the angles and lengths only, bordered by the
+    // length row when held). Returns the parity of its negative eigenvalues, or
+    // null if singular.
+    _factorShifted(sigma, dual) {
+      const P = this.prob;
+      const { L, b, W, Aw } = P;
+      const n = L.n;
+      Aw.set(P.A);
+      if (sigma) for (let i = 0; i < n; i++) if (!dual[i]) Aw[i * W + b] -= sigma;
+      if (!bandLU(n, b, Aw, P.perm, P.rowEnd)) return null;
+      let odd = 0;
+      for (let k = 0; k < n; k++) {
+        if (P.perm[k] !== k) odd ^= 1;
+        if (Aw[k * W + b] < 0) odd ^= 1;
+      }
+      if (!this.hold) return odd;
+      this._lengthRow();
+      if (!(P.bz !== 0) || !Number.isFinite(P.bz)) return null;
+      if (P.bz > 0) odd ^= 1; // det [K b; bᵀ 0] = −det K · bᵀK⁻¹b
+      return odd;
+    }
+
+    // The angle and length part of K⁻¹[v; 0], with the current factorisation, into w.
+    _reducedInverse(v, w = new Float64Array(v.length), dual) {
+      w.set(v);
+      this._solveKKT(w, 0);
+      for (let i = 0; i < w.length; i++) if (dual[i]) w[i] = 0;
+      return w;
+    }
+
+    // Is the Hessian's curvature along y clearly negative (not rounding)?
+    _clearlyNegative(y, dual) {
+      const P = this.prob;
+      const { b, W, A } = P;
+      const Hy = bandMul(y.length, b, A, y);
+      let yHy = 0;
+      let dmax = 0;
+      for (let i = 0; i < y.length; i++) {
+        if (!dual[i]) {
+          yHy += y[i] * Hy[i];
+          dmax = Math.max(dmax, Math.abs(A[i * W + b]));
+        }
+      }
+      return yHy < -UNSTABLE_TOL * dmax;
+    }
+
+    // At a would-be result: if it is an unstable equilibrium, push the shape a
+    // little along the unstable direction (whichever way lowers the energy) and
+    // let Newton carry on. After MAX_ESCAPES pushes per user change the shape is
+    // kept and flagged unstable. Returns true when it pushed.
+    _escapeIfUnstable() {
+      this.unstable = false;
+      const t0 = now();
+      const y = this._unstableDirection();
+      if (!y) return false;
+      work.searches++;
+      work.slowestSearchMs = Math.max(work.slowestSearchMs, now() - t0);
+      if (this.escapes >= MAX_ESCAPES) {
+        this.unstable = true;
+        return false;
+      }
+      this.escapes++;
+      const P = this.prob;
+      const L = P.L;
+      const x = this.x;
+      let step = Infinity;
+      for (let k = 0; k < L.K; k++) {
+        const ih = iH(L, k);
+        if (y[ih] !== 0) step = Math.min(step, (ESCAPE_DH * x[ih]) / Math.abs(y[ih]));
+        for (let j = 0; j < L.m[k]; j++) {
+          const v = Math.abs(y[iTh(L, k, j)]);
+          if (v > 0) step = Math.min(step, ESCAPE_DTHETA / v);
+        }
+      }
+      if (!Number.isFinite(step)) return false;
+      let best = null;
+      for (const sg of [1, -1]) {
+        const xt = Float64Array.from(x);
+        for (let i = 0; i < xt.length; i++) xt[i] += sg * step * y[i];
+        const ev = evaluate(P, xt, null, null);
+        const m = ev.E + (2 * ev.lamMax + 1) * ev.conSum;
+        if (!best || m < best.m) best = { xt, m };
+      }
+      x.set(best.xt);
+      this.mu = MU_INIT;
+      return true;
+    }
+
+    // ------------------------------------------------------- post-convergence
+    // Forces on the strip at engaged pins (normalised, y up).
+    _forces() {
+      const P = this.prob;
+      const L = P.L;
+      const K = L.K;
+      const x = this.x;
+      const F = [];
+      for (let i = 0; i <= K; i++) {
+        let fx = 0;
+        let fy = 0;
+        if (i < K) {
+          const ih = iH(L, i);
+          fx += x[ih + 1];
+          fy += x[ih + 2];
+        }
+        if (i > 0) {
+          const ih = iH(L, i - 1);
+          fx -= x[ih + 1];
+          fy -= x[ih + 2];
+        }
+        F.push([fx, fy]);
+      }
+      return F;
+    }
+
+    _maxSegAngles() {
+      const P = this.prob;
+      const L = P.L;
+      const x = this.x;
+      const out = [];
+      for (let k = 0; k < L.K; k++) {
+        let mx = 0;
+        for (let j = 1; j < L.m[k]; j++) {
+          mx = Math.max(mx, Math.abs(x[iTh(L, k, j)] - x[iTh(L, k, j - 1)]));
+        }
+        out.push(mx);
+      }
+      return out;
+    }
+
+    _refine() {
+      const P = this.prob;
+      const L = P.L;
+      const ang = this._maxSegAngles();
+      const over = new Map();
+      for (let k = 0; k < L.K; k++) {
+        const m = L.m[k];
+        const a = ang[k];
+        let mNew = m;
+        if (
+          (a > REFINE_HI * SEG_TARGET && m < M_MAX) ||
+          (a < REFINE_LO * SEG_TARGET && m > M_MIN)
+        ) {
+          mNew = clampM(Math.ceil((m * a) / SEG_TARGET));
+        }
+        if (mNew !== m) over.set(`${P.engIds[k]}|${P.engIds[k + 1]}`, mNew);
+      }
+      if (!over.size) return false;
+      this._rebuild(this.shape(), null, over);
+      return true;
+    }
+
+    // One contact change (the most violated), or none. Returns true if changed.
+    _contacts() {
+      const best = this._worstContact();
+      if (!best || !this._changeContact(best.act)) return false;
+      this._rebuild(this.shape());
+      return true;
+    }
+
+    // The most violated contact: an engaged pin that pulls (an Auto pin is
+    // flipped, an interior Left/Right one released), or a released pin the strip
+    // cuts into (engaged again). Records each pin's press and gap.
+    // Returns {score, act: {type, p}} or null.
+    _worstContact() {
+      let best = null;
+      const consider = (score, act) => {
+        if (!best || score > best.score) best = { score, act };
+      };
+      this._pullingPins(consider);
+      this._cutPins(consider);
+      return best;
+    }
+
+    _pullingPins(consider) {
+      const P = this.prob;
+      const K = P.L.K;
+      const F = this._forces();
+      const ev = evaluate(P, this.x, null, null);
+      const Fmax = maxForce(F);
+      const thr = HYST * Fmax;
+      for (let e = 0; e <= K; e++) {
+        const p = this.pins[P.eng[e]];
+        const press = pressOf(F[e], ev.phi[e], P.s[e]);
+        p.press = press / Fmax;
+        if (press >= -thr || p.marginal) continue;
+        if (p.mode === 'auto') consider(-press / Fmax, { type: 'flip', p });
+        else if (sided(p) && e > 0 && e < K) consider(-press / Fmax, { type: 'release', p });
+      }
+    }
+
+    // released pins that the strip cuts into
+    _cutPins(consider) {
+      const sh = this.shape();
+      if (!sh) return;
+      const { N, r: rN } = this.prob;
+      for (const p of this.pins) {
+        p.gap = null;
+        if (p.engaged || !sh.params.has(p.id)) continue;
+        const t = sh.params.get(p.id);
+        const q = pointAt(sh.nodes, sh.cum, t);
+        const d = dirAt(sh.nodes, sh.cum, t);
+        // y down in mm: left normal on screen is (d.y, -d.x)
+        const gap = (p.side * ((p.x - q[0]) * d[1] + (p.y - q[1]) * -d[0])) / N.Lref - rN;
+        p.gap = gap / rN;
+        if (gap < -HYST * rN && !p.marginal) consider(-gap / rN, { type: 'engage', p });
+      }
+    }
+
+    // Make the change, unless the pin keeps changing: then freeze it
+    // ("marginal") instead and return false.
+    _changeContact({ type, p }) {
+      p.events = (p.events || 0) + 1;
+      const tooMany = type === 'flip' ? p.flips >= MAX_FLIPS : p.events > 2 * MAX_FLIPS;
+      if (tooMany) {
+        p.marginal = true;
+        return false;
+      }
+      if (type === 'flip') {
+        p.flips++;
+        p.side = -p.side;
+      } else p.engaged = type === 'engage';
+      return true;
+    }
+
+    // ----------------------------------------------------------------- driver
+    // Run for up to budgetMs. Returns true while more work is pending. An
+    // iteration is not started when the running estimate of its time would
+    // overrun the budget, but every call does at least one.
+    // With maxIter, stop after that many Newton iterations instead (tests use
+    // this to be independent of machine speed); budgetMs is then ignored.
+    run(budgetMs, maxIter) {
+      if (!this.prob || IDLE.has(this.status)) return false;
+      const slice = {
+        t0: now(),
+        budget: maxIter === undefined ? budgetMs : Infinity,
+        maxIter,
+        itersLeft: maxIter === undefined ? Infinity : maxIter,
+        worked: false, // a Newton iteration ran in this call
+      };
+      // resume: the last call stopped after a converged iteration, leaving what
+      // follows it (the stability check, a fresh candidate's solve) to this one,
+      // which carries on from there without iterating again
+      let resumed = this.resume;
+      this.resume = false;
+      do {
+        let verdict;
+        if (resumed) {
+          resumed = false;
+          verdict = this._afterConvergence(slice);
+        } else {
+          const res = this._timedIteration(slice);
+          verdict = res === 'converged' ? this._afterConvergence(slice) : this._afterStep(res);
+        }
+        if (verdict !== 'continue') return verdict === 'pending';
+      } while (now() - slice.t0 + this.iterMs < slice.budget && slice.itersLeft > 0);
+      return true;
+    }
+
+    _timedIteration(slice) {
+      const ti = now();
+      const res = this._iterate();
+      const dt = now() - ti;
+      this.iterMs = this.iterMs > 0 ? 0.8 * this.iterMs + 0.2 * dt : dt;
+      this.iter++;
+      this.totalIter++;
+      slice.itersLeft--;
+      slice.worked = true;
+      return res;
+    }
+
+    // After an iteration that did not converge. Returns 'continue' or 'done'.
+    _afterStep(res) {
+      if (res === 'rejected' && this.mu >= MU_MAX) {
+        this.status = 'failed';
+        this._restoreGood();
+        return 'done';
+      }
+      if (this.iter > MAX_ITER_SETTLE) {
+        this.status = 'stalled';
+        return 'done';
+      }
+      // a fully rejected step during a held length search: the length asked
+      // for cannot be reached (e.g. after a contact change); back to the limit
+      if (res === 'rejected' && this.hold && this.cs && !this.cs.failed && this.capN !== null) {
+        this._abandonHold();
+        return 'continue';
+      }
+      if (
+        res !== 'rejected' &&
+        !this.hold &&
+        !this.prob.noHold &&
+        evaluate(this.prob, this.x, null, null).len > this.prob.cap
+      ) {
+        // the strip is sliding out: friction at the end pins holds its length
+        this.hold = true;
+        this.nu = 0;
+      }
+      return 'continue';
+    }
+
+    // After a converged iteration: the hold, refinement, the held length,
+    // contact changes, the stability check and the fresh re-solve, any of which
+    // may need more iterations. Returns 'continue', 'pending' (more in the next
+    // call) or 'done'.
+    _afterConvergence(slice) {
+      if (this.hold && this._releaseHold()) return 'continue';
+      this._saveGood();
+      // contacts, refinement or the held length search did not settle
+      if (this.rounds++ > MAX_ROUNDS) {
+        this.status = 'stalled';
+        return 'done';
+      }
+      if (this._refine()) return 'continue';
+      if (this.hold ? this._adjustHold() : this._clearCapN()) return 'continue';
+      if (this._contacts()) return 'continue';
+      // the stability check costs about one iteration: the next call, if this one has no time left
+      if (!this.cand && slice.worked && now() - slice.t0 + this.iterMs >= slice.budget) {
+        this.resume = true;
+        return 'pending';
+      }
+      if (!this.cand && this._escapeIfUnstable()) return 'continue';
+      const poor = this.hold || this.unstable || this._manualReleased() || !this._valid();
+      if (poor && !this.isCandidate && !this.candDone) return this._freshSolve(slice);
+      this._finish();
+      return 'done';
+    }
+
+    // The shape reached by following the user's edits can be a poor
+    // equilibrium: a held strip in a looped basin, or a strip that snapped off
+    // Left/Right pins and stays off them when the pins come back. Solve the
+    // layout again from scratch with every pin touching (over the next frames)
+    // and keep the better result, so the shape depends on the layout rather
+    // than on how it was reached. If that is still not a valid resting shape,
+    // also start from the other extreme with the interior Left/Right pins
+    // released. Returns 'continue' or 'pending'.
+    _freshSolve(slice) {
+      if (!this.cand) {
+        // a fresh start exactly like the one this solve began from would
+        // only retrace it (the solver is deterministic): skip it
+        const c = this._freshCandidate(this.candKind === 'none');
+        if (!this._sameStart(c)) this.cand = c;
+      }
+      if (this.cand) {
+        const left = slice.budget - (now() - slice.t0);
+        const before = this.cand.totalIter;
+        const iters = slice.maxIter === undefined ? undefined : Math.max(slice.itersLeft, 1);
+        const pending = this.cand.run(Math.max(left, 1), iters);
+        slice.itersLeft -= this.cand.totalIter - before;
+        if (pending) {
+          this.resume = true;
+          return 'pending';
+        }
+        this._adoptCandidate();
+      }
+      if (this.candKind !== 'none' && !this._valid() && this._hasManualInterior()) {
+        this.candKind = 'none';
+      } else this.candDone = true;
+      return 'continue';
+    }
+
+    _freshCandidate(released) {
+      const c = new Strip(this.settings);
+      c.isCandidate = true;
+      c.setState({
+        pins: this.pins.map((p) => ({
+          id: p.id,
+          x: p.x,
+          y: p.y,
+          mode: p.mode,
+          side: p.mode === 'auto' ? 0 : p.side,
+          engaged: !(released && sided(p)),
+        })),
+        shape: null,
+      });
+      return c;
+    }
+    // Where this solve started (after the user change): unknowns, segment
+    // counts and pin states.
+    _markStart() {
+      this.start = this.prob
+        ? {
+            x: Float64Array.from(this.x),
+            m: Array.from(this.prob.L.m).join(','),
+            pins: this.pins.map((p) => `${p.side}:${p.engaged}`).join(','),
+          }
+        : null;
+    }
+    // Does strip c start exactly where this solve started?
+    _sameStart(c) {
+      const s = this.start;
+      if (!s || !c.prob || c.x.length !== s.x.length || Array.from(c.prob.L.m).join(',') !== s.m) {
+        return false;
+      }
+      for (let i = 0; i < s.x.length; i++) if (c.x[i] !== s.x[i]) return false;
+      return c.pins.map((p) => `${p.side}:${p.engaged}`).join(',') === s.pins;
+    }
+    _hasManualInterior() {
+      return this.pins.some((p, i) => sided(p) && i > 0 && i < this.pins.length - 1);
+    }
+    _manualReleased() {
+      return this.pins.some((p) => sided(p) && !p.engaged);
+    }
+    // A valid resting shape: no Left/Right pin it touches pulls on the strip
+    // (end pins are never released, so they can end up pulling).
+    _valid() {
+      return !this.result().pins.some((p) => p.engaged && sided(p) && p.press < -HYST);
+    }
+    // Better = stable (an unstable equilibrium is no resting shape), then valid,
+    // then more pins in contact (the Left/Right sides the user asked for), then
+    // not held at the length limit, then less bending energy.
+    _adoptCandidate() {
+      const c = this.cand;
+      this.cand = null;
+      if (!c.prob || (c.status !== 'converged' && c.status !== 'friction')) return;
+      const vMine = this._valid();
+      const vCand = c._valid();
+      const nMine = this.pins.filter((p) => p.engaged).length;
+      const nCand = c.pins.filter((p) => p.engaged).length;
+      const eMine = evaluate(this.prob, this.x, null, null).E;
+      const eCand = evaluate(c.prob, c.x, null, null).E;
+      let better;
+      if (c.unstable !== this.unstable) better = !c.unstable;
+      else if (vCand !== vMine) better = vCand;
+      else if (nCand !== nMine) better = nCand > nMine;
+      else if (c.hold !== this.hold) better = !c.hold;
+      else better = eCand < eMine * (1 - 1e-6);
+      if (!better) return;
+      this.prob = c.prob;
+      this.x = c.x;
+      this.hold = c.hold;
+      this.nu = c.nu;
+      this.unstable = c.unstable;
+      const byId = new Map(c.pins.map((p) => [p.id, p]));
+      for (const p of this.pins) {
+        const q = byId.get(p.id);
+        if (q) {
+          p.side = q.side;
+          p.engaged = q.engaged;
+          p.marginal = q.marginal;
+        }
+      }
+      this.rounds = 0;
+    }
+
+    // The held length is a modelling choice (in reality friction decides how far
+    // the strip slides), so pick the one that keeps the user's pins in contact:
+    // the length limit, or the longest length below it at which every Left/Right
+    // pin pushes. Shorter makes interior pins push harder and end pins less, so
+    // this bisects between "an interior pin pulls" (too long) and "an end pin
+    // pulls" (too short). Returns true when it changed the held length.
+    _adjustHold() {
+      const P = this.prob;
+      const L = P.L;
+      const K = L.K;
+      const ev = evaluate(P, this.x, null, null);
+      const F = this._forces();
+      const Fs = maxForce(F);
+      let gInt = Infinity;
+      let gEnd = Infinity;
+      for (let e = 0; e <= K; e++) {
+        if (!sided(this.pins[P.eng[e]])) continue;
+        const press = pressOf(F[e], ev.phi[e], P.s[e]);
+        if (e === 0 || e === K) gEnd = Math.min(gEnd, press);
+        else gInt = Math.min(gInt, press);
+      }
+      const len = ev.len;
+      if (this.cs && this.cs.failed) return false;
+      if (!Number.isFinite(gInt)) return this._reengageForHold(len);
+      const thr = HYST * Fs;
+      if (gInt < -thr) return this._holdStep(len, 'long', gInt / Fs);
+      if (gEnd < -thr) return this._holdStep(len, 'short', gEnd / Fs);
+      // valid: done at the limit, or once the weakest interior contact barely pushes
+      const cs = this.cs;
+      if (
+        this.capN !== null &&
+        gInt > HOLD_PRESS_TOL * Fs &&
+        !(cs && cs.hi !== null && cs.hi - len < 1e-6 * len)
+      ) {
+        return this._holdStep(len, 'short');
+      }
+      return this._reengageForHold(len);
+    }
+    // One step of the held length search: 'long' = the strip is too long here.
+    // g is the pulling pin's force relative to the largest one. If several
+    // steps in a row do not make it pull less, length is not what makes it pull:
+    // give up and go back to the limit.
+    _holdStep(len, verdict, g) {
+      const P = this.prob;
+      const ev = evaluate(P, this.x, null, null);
+      const K = P.L.K;
+      const capMax = this._capLimit();
+      let poly = 0; // the strip can never be shorter than the chords between its contacts
+      for (let i = 0; i < K; i++) {
+        poly += Math.hypot(ev.Q[2 * i + 2] - ev.Q[2 * i], ev.Q[2 * i + 3] - ev.Q[2 * i + 1]);
+      }
+      const cs = this.cs || (this.cs = { lo: null, hi: null, n: 0 });
+      if (g !== undefined) {
+        const best = cs[`best_${verdict}`];
+        if (best === undefined || g > best) {
+          cs[`best_${verdict}`] = g;
+          cs[`stale_${verdict}`] = 0;
+        } else if (++cs[`stale_${verdict}`] >= HOLD_PATIENCE) return this._abandonHold();
+      }
+      if (cs.n++ >= HOLD_SEARCH_MAX) return this._abandonHold();
+      if (cs.nu0 === undefined) cs.nu0 = Math.abs(this.nu);
+      else if (Math.abs(this.nu) > HOLD_TENSION_GROWTH * cs.nu0) return this._abandonHold();
+      if (verdict === 'long') cs.hi = len;
+      else cs.lo = len;
+      if (cs.lo !== null && cs.hi !== null && cs.hi - cs.lo < 1e-6 * len) {
+        return this._abandonHold();
+      }
+      let next;
+      if (cs.lo !== null && cs.hi !== null) next = 0.5 * (cs.lo + cs.hi);
+      else if (verdict === 'long') next = len - 0.25 * (len - poly);
+      else next = len + 0.25 * (len - poly);
+      if (next >= capMax * (1 - 1e-9)) {
+        this.capN = null;
+        P.cap = capMax;
+      } else {
+        this.capN = next;
+        P.cap = next;
+      }
+      return true;
+    }
+
+    // A Left/Right pin released while the length was still free (the strip then
+    // slid out and is now held) is brought back once per user change: engaged
+    // again, with the held length searched so that it just pushes.
+    _reengageForHold(len) {
+      const pins = this.pins;
+      const n = pins.length;
+      let any = false;
+      for (let i = 1; i < n - 1; i++) {
+        const p = pins[i];
+        if (!sided(p) || p.engaged || p.marginal || p.holdTried) continue;
+        p.holdTried = true;
+        p.engaged = true;
+        any = true;
+      }
+      if (!any) return false;
+      // at the current length the re-engaged pins pull: search downwards from here
+      this.cs = { lo: null, hi: len, n: 0 };
+      const P = this.prob;
+      this.capN = len - 0.25 * (len - 1);
+      P.cap = this.capN;
+      this._rebuild(this.shape());
+      return true;
+    }
+    // Stop searching until the next user change; contacts decide from here.
+    _abandonHold() {
+      this.cs.failed = true;
+      if (this.capN === null) return false;
+      this.capN = null;
+      this.prob.cap = this._capLimit();
+      return true;
+    }
+    _clearCapN() {
+      if (this.capN === null) return false;
+      this.capN = null;
+      this.prob.cap = this._capLimit();
+      return false;
+    }
+
+    // Let go of the length cap when the strip would rather be shorter (ν < 0).
+    _releaseHold() {
+      if (!(this.nu < -HYST * maxForce(this._forces()))) return false;
+      // during a held length search, letting go means this length is beyond the
+      // free resting length, where an interior pin pulls: treat it as too long
+      if (this.cs && !this.cs.failed && this.capN !== null) {
+        return this._holdStep(evaluate(this.prob, this.x, null, null).len, 'long');
+      }
+      this.hold = false;
+      this.nu = 0;
+      return true;
+    }
+
+    _finish() {
+      this.status = this.hold ? 'friction' : 'converged';
+    }
+
+    // Run to completion (tests, export).
+    solve(maxMs) {
+      const lim = maxMs || 1e9;
+      const t0 = Date.now();
+      while (this.run(50)) if (Date.now() - t0 > lim) break;
+      return this.status;
+    }
+
+    // ---------------------------------------------------------------- results
+    /** @returns {Result} */
+    result() {
+      const out = this._emptyResult();
+      if (!this.prob) {
+        const free = (p) => ({
+          id: p.id,
+          engaged: false,
+          side: p.side,
+          mode: p.mode,
+          warnings: [],
+        });
+        out.pins = this._userPinResults(new Map(this.pins.map((p) => [p.id, free(p)])));
+        return out;
+      }
+      const P = this.prob;
+      const N = P.N;
+      out.stale = P.sig !== this._signature();
+      const { nodes, nodeOfPin, ev } = this._nodesN();
+      out.nodes = nodes.map((p) => this.fromN(N, p[0], p[1]));
+      const { tang, curv } = this._tangentsAndCurvature(nodes.length);
+      out.tangents = Array.from(tang, (a) => -a);
+      out.curvature = Array.from(curv);
+      out.length = ev.len * N.Lref;
+      let kmax = 0;
+      for (let i = 0; i < curv.length; i++) {
+        if (Math.abs(curv[i]) > kmax) {
+          kmax = Math.abs(curv[i]);
+          out.minRadiusAt = out.nodes[i];
+        }
+      }
+      out.minRadius = kmax > 0 ? 1 / kmax : Infinity;
+      const F = this._forces();
+      const Fmax = maxForce(F);
+      const ctx = {
+        ev,
+        curv,
+        nodeOfPin,
+        F,
+        Fmax,
+        out,
+        sh: this.shape(),
+        engPos: new Map(P.engIds.map((id, e) => [id, e])),
+      };
+      out.pins = this._userPinResults(
+        new Map(this.pins.map((p) => [p.id, this._pinResult(p, ctx)])),
+      );
+      return out;
+    }
+
+    // stale: the shape shown was solved for an earlier layout (after a failed
+    // solve, or while the pins are invalid); unstable: an unstable equilibrium
+    _emptyResult() {
+      return {
+        status: this.status,
+        held: this.hold,
+        heldBelowLimit: this.hold && this.capN !== null,
+        muReq: 0,
+        holdFactor: this.settings.holdFactor,
+        pins: [],
+        nodes: [],
+        tangents: [],
+        curvature: [],
+        length: 0,
+        minRadius: Infinity,
+        minRadiusAt: null,
+        rEff: this.rEff,
+        iter: this.iter,
+        stale: false,
+        unstable: Boolean(this.unstable),
+        invalid: this.invalid.map((v) => Object.assign({}, v)),
+      };
+    }
+
+    // Tangent (radians, y up) and signed curvature (1/mm, positive = turning
+    // left on screen) at each of the nn nodes; 0 curvature at the ends.
+    _tangentsAndCurvature(nn) {
+      const { L, N } = this.prob;
+      const x = this.x;
+      const tang = new Float64Array(nn);
+      const curv = new Float64Array(nn);
+      const thAt = [];
+      const hAt = [];
+      for (let k = 0; k < L.K; k++) {
+        for (let j = 0; j < L.m[k]; j++) {
+          thAt.push(x[iTh(L, k, j)]);
+          hAt.push(x[iH(L, k)]);
+        }
+      }
+      tang[0] = thAt[0];
+      tang[nn - 1] = thAt[thAt.length - 1];
+      for (let i = 1; i < nn - 1; i++) {
+        tang[i] = 0.5 * (thAt[i - 1] + thAt[i]);
+        curv[i] = (thAt[i] - thAt[i - 1]) / (0.5 * (hAt[i - 1] + hAt[i])) / N.Lref;
+      }
+      return { tang, curv };
+    }
+
+    // The result for one of the pins the strip sees.
+    _pinResult(p, ctx) {
+      const e = ctx.engPos.get(p.id);
+      const o = {
+        id: p.id,
+        x: p.x,
+        y: p.y,
+        mode: p.mode,
+        side: p.side,
+        engaged: e !== undefined,
+        marginal: Boolean(p.marginal),
+        warnings: [],
+      };
+      if (e !== undefined) this._contactResult(o, p, e, ctx);
+      else {
+        o.label = 'free';
+        if (ctx.sh && ctx.sh.params.has(p.id)) o.param = ctx.sh.params.get(p.id);
+      }
+      if (p.marginal) o.warnings.push('marginal');
+      return o;
+    }
+
+    // An engaged pin: contact point, inside/outside label, force, warnings, and
+    // at a held strip's ends the friction needed.
+    _contactResult(o, p, e, ctx) {
+      const { N, L } = this.prob;
+      const { ev, curv, nodeOfPin, F, Fmax, out } = ctx;
+      const K = L.K;
+      const nn = curv.length;
+      o.contact = this.fromN(N, ev.Q[2 * e], ev.Q[2 * e + 1]);
+      const ni = nodeOfPin[e];
+      // curvature used for the inside/outside label: at the node, or one node in at the ends
+      let kap = curv[ni];
+      if (e === 0) kap = curv[Math.min(ni + 1, nn - 1)];
+      if (e === K) kap = curv[Math.max(ni - 1, 0)];
+      o.label = 'outside';
+      if (p.mode === 'through') o.label = 'through';
+      else if (Math.abs(kap) < 1e-6 / N.Lref) o.label = 'straight';
+      else if (p.side * kap > 0) o.label = 'inside';
+      const f = ev.phi[e];
+      const nx = -Math.sin(f);
+      const ny = Math.cos(f);
+      const press = pressOf(F[e], f, p.side);
+      o.force = Math.hypot(F[e][0], F[e][1]) / Fmax;
+      o.forceVec = [F[e][0] / (N.Lref * N.Lref), -F[e][1] / (N.Lref * N.Lref)];
+      o.press = press / Fmax;
+      if (p.mode !== 'through' && Math.abs(curv[ni]) * this.rEff > 1) o.warnings.push('wrap');
+      const end = e === 0 || e === K;
+      // held strip: the end pins carry the tension tangentially, by friction
+      if (this.hold && end) {
+        const ft = Math.abs(F[e][0] * Math.cos(f) + F[e][1] * Math.sin(f));
+        const fn = Math.abs(F[e][0] * nx + F[e][1] * ny);
+        o.muReq = fn > 0 ? ft / fn : Infinity;
+        out.muReq = Math.max(out.muReq, o.muReq);
+      }
+      if (sided(p) && end && press < -HYST * Fmax) o.warnings.push('liftoff');
+    }
+
+    // One result per pin as given, from the results by the pin each acts as.
+    // Warnings: 'duplicate' (sameAs: ids) for pins at the same position, which
+    // act as one; 'overlap' (overlaps: ids) for pins closer than the pin diameter.
+    _userPinResults(byPin) {
+      const U = this.userPins;
+      const d2 = this.settings.d * this.settings.d;
+      const tol2 = this.posTol * this.posTol;
+      const out = U.map((u) => {
+        const o = Object.assign({}, byPin.get(this._lead(u.id)) || { engaged: false, side: 1 });
+        o.id = u.id;
+        o.x = u.x;
+        o.y = u.y;
+        o.mode = u.mode;
+        o.warnings = (o.warnings || []).slice();
+        return o;
+      });
+      const flag = (o, w, key, id) => {
+        if (!o[key]) {
+          o[key] = [];
+          o.warnings.push(w);
+        }
+        o[key].push(id);
+      };
+      for (let i = 0; i < U.length; i++) {
+        for (let j = i + 1; j < U.length; j++) {
+          const dx = U[i].x - U[j].x;
+          const dy = U[i].y - U[j].y;
+          const dd = dx * dx + dy * dy;
+          if (!(dd < d2 || dd <= tol2)) continue;
+          if (this._lead(U[i].id) === this._lead(U[j].id)) {
+            flag(out[i], 'duplicate', 'sameAs', U[j].id);
+            flag(out[j], 'duplicate', 'sameAs', U[i].id);
+          } else if (dd > tol2) {
+            flag(out[i], 'overlap', 'overlaps', U[j].id);
+            flag(out[j], 'overlap', 'overlaps', U[i].id);
+          }
+        }
+      }
+      return out;
+    }
+
+    // Closest point on the strip (between the end contacts) to (x, y), mm.
+    // index: where a pin inserted here goes in the sequence.
+    locate(px, py) {
+      if (!this.prob) return null;
+      const sh = this.shape();
+      const pr = project(sh.nodes, sh.cum, [px, py], 0, sh.cum[sh.cum.length - 1]);
+      const U = this.userPins;
+      let index = U.length;
+      for (let i = 0; i < U.length; i++) {
+        const t = sh.params.get(this._lead(U[i].id));
+        if (t !== undefined && t > pr.t) {
+          index = i;
+          break;
+        }
+      }
+      const q = pointAt(sh.nodes, sh.cum, pr.t);
+      const atEnd = pr.t <= 0 || pr.t >= sh.cum[sh.cum.length - 1];
+      return { dist: pr.d, t: pr.t, index, point: q, atEnd };
+    }
+
+    // Serialisable state (mm), enough to rebuild the same shape. A stale shape,
+    // or a failed one that is not the last good shape, is left out: it is no
+    // starting point for this layout.
+    /** @returns {State} */
+    getState() {
+      const failedRaw =
+        this.status === 'failed' && !(this.lastGood && this.prob === this.lastGood.prob);
+      const keep = this.prob && !failedRaw && this.prob.sig === this._signature();
+      const sh = keep ? this.shape() : null;
+      const byId = new Map(this.pins.map((p) => [p.id, p]));
+      return {
+        pins: this.userPins.map((u) => {
+          const p = byId.get(this._lead(u.id));
+          return {
+            id: u.id,
+            x: u.x,
+            y: u.y,
+            mode: u.mode,
+            side: p ? p.side : 1,
+            engaged: p ? p.engaged : true,
+          };
+        }),
+        shape: sh
+          ? {
+              nodes: sh.nodes.map((q) => [q[0], q[1]]),
+              params: Array.from(sh.params.entries()),
+              stretches: sh.stretches,
+            }
+          : null,
+      };
+    }
+    /**
+     * Restore a state from getState(), with new settings if given.
+     * @param {State} st
+     */
+    setState(st) {
+      if (st.settings) Object.assign(this.settings, st.settings);
+      this.pins = this._group(st.pins).map((p) => {
+        const mode = p.mode || 'auto';
+        const through = mode === 'through';
+        return {
+          id: p.id,
+          x: p.x,
+          y: p.y,
+          mode,
+          side: modeSide(mode, p.side),
+          engaged: through || p.engaged !== false,
+          flips: 0,
+          events: 0,
+          marginal: false,
+          fresh: !p.side,
+        };
+      });
+      if (this.pins.length) {
+        this.pins[0].engaged = true;
+        this.pins[this.pins.length - 1].engaged = true;
+      }
+      const shape = st.shape
+        ? {
+            nodes: st.shape.nodes,
+            params: new Map(st.shape.params),
+            stretches: st.shape.stretches,
+            cum: cumLen(st.shape.nodes),
+          }
+        : null;
+      this.prob = null;
+      this._resetProgress();
+      this.hold = false;
+      this.nu = 0;
+      this._rebuild(shape);
+      this._markStart();
+    }
+  }
+
+  root.SpringSolver = {
+    Strip,
+    bandLU,
+    bandSolve,
+    evaluate,
+    makeLayout,
+    iTh,
+    iH,
+    MODES: ['auto', 'left', 'right', 'through'],
+    consts: { SEG_TARGET, M_MIN, M_MAX, TOL_STEP, TOL_CON, HYST },
+    work,
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+
+<script id="app-script">
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const svg = $('view');
+  const RULER_T = 22;
+  const RULER_L = 40; // ruler sizes, px
+  const HIT_PX = 8; // insertion / hover distance, px
+  const HANDLE_PX = 11; // pin handle radius, px
+  const DEFAULTS = { W: 600, H: 400, d: 6, t: 3, overhang: 20, minR: 0, holdFactor: 2 };
+  const STORE_KEY = 'springStripJig.v1';
+  const EXAMPLE = {
+    W: 600,
+    H: 400,
+    pins: [
+      [60, 300],
+      [170, 205],
+      [300, 175],
+      [420, 235],
+      [540, 140],
+    ],
+  };
+  const DEFAULT_MODE = 'through'; // mode of new pins and of the example
+  const WHEEL_UNIT_PX = [1, 16, 400]; // a wheel step in px, by deltaMode (pixels, lines, pages)
+  const MODES = ['through', 'auto', 'left', 'right']; // the order X cycles through
+  const UNDO_LIMIT = 300; // undo steps kept
+  const AUTOSAVE_MS = 300; // the project is saved this long after the last change
+  const CONTEXT_GRACE_MS = 400; // the context menu right after a right-button pan deletes nothing
+  const DBLCLICK_GRACE_MS = 600; // a double-click on a pin just made does not change its mode
+
+  const state = { settings: Object.assign({}, DEFAULTS), pins: [], nextId: 1, selected: null };
+  const solver = new SpringSolver.Strip(solverSettings());
+  const view = { z: 1, tx: 0, ty: 0, w: 0, h: 0 };
+  let grid = { minor: 1, major: 10 };
+  let res = solver.result();
+  let hover = null; // {sx, sy, wx, wy}
+  let drag = null;
+  let pinsDirty = false;
+  let lastCreated = { id: null, time: 0 };
+
+  function solverSettings() {
+    const s = state.settings;
+    return { d: s.d, t: s.t, holdFactor: s.holdFactor };
+  }
+
+  // ------------------------------------------------------------ formatting
+  function fmtNum(v, dec) {
+    const neg = v < 0;
+    const s = Math.abs(v).toFixed(dec);
+    let [i, f] = s.split('.');
+    if (i.length > 3) i = i.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+    if (f) {
+      f = f.replace(/0+$/, '');
+    }
+    return (neg ? '−' : '') + i + (f ? `.${f}` : '');
+  }
+  function fmtLen(v) {
+    if (!Number.isFinite(v)) return '∞';
+    const a = Math.abs(v);
+    const dec = a === 0 ? 0 : Math.min(3, Math.max(0, 3 - Math.floor(Math.log10(a))));
+    return `${fmtNum(v, dec)} mm`;
+  }
+  function fmtCoord(v) {
+    const dec = Math.min(6, Math.max(0, Math.ceil(Math.log10(Math.max(view.z, 1e-9))) + 1));
+    return fmtNum(v, dec);
+  }
+  function clean(v) {
+    return Number(v.toPrecision(12));
+  }
+
+  // ---------------------------------------------------------------- view
+  function w2s(x, y) {
+    return [x * view.z + view.tx, y * view.z + view.ty];
+  }
+  function s2w(x, y) {
+    return [(x - view.tx) / view.z, (y - view.ty) / view.z];
+  }
+  function localXY(e) {
+    const r = svg.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  }
+  function measure() {
+    const r = svg.getBoundingClientRect();
+    view.w = r.width;
+    view.h = r.height;
+  }
+
+  // The view showing the box; applied unless apply === false.
+  function fitBox([x0, y0, x1, y1], pad, apply) {
+    measure();
+    const aw = Math.max(view.w - RULER_L - 2 * pad, 20);
+    const ah = Math.max(view.h - RULER_T - 2 * pad - 26, 20);
+    const bw = Math.max(x1 - x0, 1e-9);
+    const bh = Math.max(y1 - y0, 1e-9);
+    const z = Math.min(aw / bw, ah / bh);
+    const v = {
+      z,
+      tx: RULER_L + pad + (aw - bw * z) / 2 - x0 * z,
+      ty: RULER_T + pad + 26 + (ah - bh * z) / 2 - y0 * z,
+    };
+    if (apply !== false) {
+      Object.assign(view, v);
+      requestRender();
+    }
+    return v;
+  }
+  function fitArea(apply) {
+    return fitBox([0, 0, state.settings.W, state.settings.H], 36, apply);
+  }
+  // F: fit the work area, or the pins if the work area is already fitted.
+  function fitToggle() {
+    const v = fitArea(false);
+    const same =
+      Math.abs(view.z / v.z - 1) < 1e-6 &&
+      Math.abs(view.tx - v.tx) < 0.5 &&
+      Math.abs(view.ty - v.ty) < 0.5;
+    if (same && state.pins.length) fitPins();
+    else fitArea();
+  }
+  function fitPins() {
+    if (state.pins.length < 2 && !(res.nodes && res.nodes.length)) {
+      fitArea();
+      return;
+    }
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    const add = (x, y) => {
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x);
+      y1 = Math.max(y1, y);
+    };
+    for (const p of state.pins) add(p.x, p.y);
+    if (res.nodes) for (const q of res.nodes) add(q[0], q[1]);
+    const m = Math.max(state.settings.d, 0.02 * Math.max(x1 - x0, y1 - y0));
+    fitBox([x0 - m, y0 - m, x1 + m, y1 + m], 30);
+  }
+  function zoomAt(sx, sy, k) {
+    const nz = Math.min(1e6, Math.max(1e-6, view.z * k));
+    const f = nz / view.z;
+    view.tx = sx - (sx - view.tx) * f;
+    view.ty = sy - (sy - view.ty) * f;
+    view.z = nz;
+    requestRender();
+  }
+  // Minor step: smallest 1, 2 or 5 × 10^n mm that is at least 8 px.
+  function computeGrid() {
+    const target = 8 / view.z;
+    const e = Math.floor(Math.log10(target));
+    let minor = null;
+    for (const ee of [e, e + 1]) {
+      for (const m of [1, 2, 5]) {
+        const v = m * Math.pow(10, ee);
+        if (minor === null && v >= target * (1 - 1e-9)) minor = v;
+      }
+    }
+    const mant = Math.round(minor / Math.pow(10, Math.floor(Math.log10(minor) + 1e-9)));
+    const major = minor * (mant === 2 ? 5 : 10);
+    grid = { minor: clean(minor), major: clean(major) };
+  }
+  function niceAtLeast(v) {
+    const e = Math.floor(Math.log10(v));
+    for (const ee of [e, e + 1]) {
+      for (const m of [1, 2, 5]) {
+        const c = m * Math.pow(10, ee);
+        if (c >= v * (1 - 1e-9)) return clean(c);
+      }
+    }
+    return v;
+  }
+
+  // ---------------------------------------------------------------- solver loop
+  let rafPending = false;
+  function requestRender() {
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(frame);
+    }
+  }
+  // Show "converging" on the page background, but only once a solve has run
+  // for a moment, so the quick re-solves while dragging do not flicker.
+  const BUSY_DELAY_MS = 200;
+  let busySince = null;
+  function showBusy(converging) {
+    const now = performance.now();
+    if (!converging) busySince = null;
+    else if (busySince === null) busySince = now;
+    $('stage').classList.toggle('converging', converging && now - busySince >= BUSY_DELAY_MS);
+  }
+  // promises waiting for the solver to go quiet (test hook whenIdle)
+  const idleWaiters = [];
+  function frame() {
+    rafPending = false;
+    if (pinsDirty) {
+      solver.setPins(state.pins);
+      pinsDirty = false;
+    }
+    const active = solver.run(8);
+    res = solver.result();
+    render();
+    showBusy(res.status === 'converging');
+    if (active) requestRender();
+    else if (!rafPending) for (const w of idleWaiters.splice(0)) w(res.status);
+  }
+  function pinsChanged() {
+    pinsDirty = true;
+    requestRender();
+  }
+
+  // ---------------------------------------------------------------- undo / save
+  const undoStack = [];
+  const redoStack = [];
+  let pendingUndo = null;
+  function snapshot() {
+    if (pinsDirty) {
+      solver.setPins(state.pins);
+      pinsDirty = false;
+    }
+    const st = solver.getState();
+    return JSON.stringify({
+      v: 1,
+      settings: state.settings,
+      nextId: state.nextId,
+      selected: state.selected,
+      pins: st.pins,
+      shape: st.shape,
+    });
+  }
+  // Settings rules, shared by the Settings fields and by opening a project.
+  const SETTING_OK = {
+    W: (v) => v > 0,
+    H: (v) => v > 0,
+    d: (v) => v > 0,
+    t: (v) => v > 0,
+    overhang: (v) => v >= 0,
+    minR: (v) => v >= 0,
+    holdFactor: (v) => v > 1,
+  };
+  function validSetting(k, v) {
+    return typeof v === 'number' && Number.isFinite(v) && SETTING_OK[k](v);
+  }
+  // A project as read from a file or from storage: {project, problems}.
+  // Problems would change the design (a pin without a position, an unknown
+  // mode, a bad setting, a newer format): opening a file refuses them, and
+  // restoring leaves those parts out. Repaired quietly: numbers written as
+  // text, missing or repeated pin ids, and a bad saved shape (it is only a
+  // starting point for the solver).
+  function checkProject(o) {
+    const problems = [];
+    if (!o || typeof o !== 'object') {
+      return {
+        project: { v: 1, settings: {}, nextId: 1, selected: null, pins: [], shape: null },
+        problems: ['the project data is not valid'],
+      };
+    }
+    if (o.v !== undefined && o.v !== 1) {
+      problems.push(
+        `it was made by a newer version of this tool (format ${String(o.v).slice(0, 10)})`,
+      );
+    }
+    const num = (v) => {
+      if (typeof v === 'number') return v;
+      return typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+    };
+    const settings = {};
+    const given = o.settings && typeof o.settings === 'object' ? o.settings : {};
+    for (const k of Object.keys(DEFAULTS)) {
+      if (given[k] === undefined) continue;
+      const v = num(given[k]);
+      if (validSetting(k, v)) settings[k] = v;
+      else problems.push(`the setting ${k} is not valid ("${String(given[k]).slice(0, 20)}")`);
+    }
+    if (!Array.isArray(o.pins)) problems.push('it has no list of pins');
+    const pins = [];
+    (Array.isArray(o.pins) ? o.pins : []).forEach((p, i) => {
+      const x = num(p && p.x);
+      const y = num(p && p.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        problems.push(`pin ${i + 1} has no valid position`);
+        return;
+      }
+      const mode = p.mode === undefined ? 'auto' : p.mode;
+      if (!MODES.includes(mode)) {
+        problems.push(`pin ${i + 1} has an unknown mode "${String(mode).slice(0, 20)}"`);
+        return;
+      }
+      const q = { id: p.id, x, y, mode };
+      if (p.side === 1 || p.side === -1 || p.side === 0) q.side = p.side;
+      if (typeof p.engaged === 'boolean') q.engaged = p.engaged;
+      pins.push(q);
+    });
+    // ids: unique positive integers, or all renumbered (the saved shape refers to the old ones)
+    const idsOk =
+      new Set(pins.map((p) => p.id)).size === pins.length &&
+      pins.every((p) => Number.isInteger(p.id) && p.id > 0);
+    if (!idsOk) {
+      pins.forEach((p, i) => {
+        p.id = i + 1;
+      });
+    }
+    const maxId = pins.reduce((m, p) => Math.max(m, p.id), 0);
+    return {
+      project: {
+        v: 1,
+        settings,
+        pins,
+        nextId: Math.max(Number.isInteger(o.nextId) && o.nextId > 0 ? o.nextId : 1, maxId + 1),
+        selected: idsOk && pins.some((p) => p.id === o.selected) ? o.selected : null,
+        shape: idsOk && validShape(o.shape) ? o.shape : null,
+      },
+      problems,
+    };
+  }
+  function validShape(sh) {
+    const fin = (v) => typeof v === 'number' && Number.isFinite(v);
+    const pair = (q) => Array.isArray(q) && q.length === 2 && fin(q[0]) && fin(q[1]);
+    const { M_MIN, M_MAX } = SpringSolver.consts;
+    return (
+      Boolean(sh) &&
+      Array.isArray(sh.nodes) &&
+      sh.nodes.length >= 2 &&
+      sh.nodes.every(pair) &&
+      Array.isArray(sh.params) &&
+      sh.params.every((e) => Array.isArray(e) && e.length === 2 && fin(e[1])) &&
+      Array.isArray(sh.stretches) &&
+      sh.stretches.every(
+        (s) =>
+          s &&
+          fin(s.t0) &&
+          fin(s.t1) &&
+          Number.isInteger(s.m) &&
+          s.m >= M_MIN &&
+          s.m <= M_MAX &&
+          pair(s.lam),
+      )
+    );
+  }
+  function restore(json) {
+    const o = checkProject(typeof json === 'string' ? JSON.parse(json) : json).project;
+    state.settings = Object.assign({}, DEFAULTS, o.settings);
+    state.pins = o.pins.map((p) => ({ id: p.id, x: p.x, y: p.y, mode: p.mode }));
+    state.nextId = o.nextId;
+    state.selected = o.selected;
+    solver.setState({ pins: o.pins, shape: o.shape, settings: solverSettings() });
+    pinsDirty = false;
+    syncInputs();
+    requestRender();
+  }
+  function beginChange() {
+    pendingUndo = snapshot();
+  }
+  function commitChange() {
+    if (pendingUndo === null) return;
+    undoStack.push(pendingUndo);
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    redoStack.length = 0;
+    pendingUndo = null;
+    historyChanged();
+  }
+  function cancelChange() {
+    pendingUndo = null;
+  }
+  function change(fn) {
+    beginChange();
+    fn();
+    commitChange();
+  }
+  function undo() {
+    if (!undoStack.length) return;
+    redoStack.push(snapshot());
+    restore(undoStack.pop());
+    historyChanged();
+  }
+  function redo() {
+    if (!redoStack.length) return;
+    undoStack.push(snapshot());
+    restore(redoStack.pop());
+    historyChanged();
+  }
+  // the undo history changed: save the project, update the Undo and Redo buttons
+  function historyChanged() {
+    autosave();
+    updateButtons();
+  }
+  let saveTimer = null;
+  function autosave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(STORE_KEY, snapshot());
+      } catch {
+        /* storage unavailable */
+      }
+    }, AUTOSAVE_MS);
+  }
+  function updateButtons() {
+    $('btnUndo').disabled = !undoStack.length;
+    $('btnRedo').disabled = !redoStack.length;
+  }
+
+  // ---------------------------------------------------------------- pins
+  function pinIndex(id) {
+    return state.pins.findIndex((p) => p.id === id);
+  }
+  function getPin(id) {
+    return state.pins.find((p) => p.id === id) || null;
+  }
+  function snap(v, e) {
+    if (e && e.altKey) return clean(v);
+    const s = grid.minor;
+    return clean(Math.round(v / s) * s);
+  }
+  function pinAt(sx, sy) {
+    let best = null;
+    let bd = Infinity;
+    const rp = Math.max(HANDLE_PX, (state.settings.d / 2) * view.z);
+    for (const p of state.pins) {
+      const q = w2s(p.x, p.y);
+      const d = Math.hypot(q[0] - sx, q[1] - sy);
+      if (d <= rp && d < bd) {
+        bd = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+  function insertionFor(wx, wy) {
+    const n = state.pins.length;
+    if (n === 0) return { index: 0, kind: 'first' };
+    if (n >= 2) {
+      const loc = solver.locate(wx, wy); // null while there is no strip
+      if (loc && !loc.atEnd && loc.dist * view.z <= HIT_PX) {
+        return { index: loc.index, kind: 'strip', point: loc.point };
+      }
+    }
+    const a = state.pins[0];
+    const b = state.pins[n - 1];
+    if (n >= 2 && Math.hypot(wx - a.x, wy - a.y) < Math.hypot(wx - b.x, wy - b.y)) {
+      return { index: 0, kind: 'end', from: a };
+    }
+    return { index: n, kind: 'end', from: b };
+  }
+  function addPinAt(wx, wy, e) {
+    const ins = insertionFor(wx, wy);
+    const p = { id: state.nextId++, x: snap(wx, e), y: snap(wy, e), mode: DEFAULT_MODE };
+    state.pins.splice(ins.index, 0, p);
+    state.selected = p.id;
+    lastCreated = { id: p.id, time: performance.now() };
+    pinsChanged();
+    return p;
+  }
+  function removePin(id) {
+    const i = pinIndex(id);
+    if (i < 0) return;
+    change(() => {
+      state.pins.splice(i, 1);
+      if (state.selected === id) state.selected = null;
+      pinsChanged();
+    });
+  }
+  function setMode(id, mode) {
+    const p = getPin(id);
+    if (!p || p.mode === mode) return;
+    change(() => {
+      p.mode = mode;
+      pinsChanged();
+    });
+  }
+  function cycleMode(id) {
+    const p = getPin(id);
+    if (p) setMode(id, MODES[(MODES.indexOf(p.mode) + 1) % MODES.length]);
+  }
+  function nudge(dx, dy) {
+    const p = getPin(state.selected);
+    if (!p) return;
+    change(() => {
+      p.x = clean(p.x + dx);
+      p.y = clean(p.y + dy);
+      pinsChanged();
+    });
+  }
+
+  // ---------------------------------------------------------------- pointer input
+  const pointers = new Map();
+  let suppressContextUntil = 0; // see the contextmenu handler
+  function inRulers(sx, sy) {
+    return sx < RULER_L || sy < RULER_T;
+  }
+
+  svg.addEventListener('pointerdown', (e) => {
+    const [sx, sy] = localXY(e);
+    try {
+      svg.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    pointers.set(e.pointerId, { x: sx, y: sy });
+    if (pointers.size === 2) {
+      // second finger: abandon any pin gesture and pinch instead
+      if (drag && drag.type === 'pin' && (drag.created || drag.moved) && pendingUndo) {
+        const u = pendingUndo;
+        pendingUndo = null;
+        restore(u);
+      } else cancelChange();
+      const [a, b] = [...pointers.values()];
+      drag = {
+        type: 'pinch',
+        d0: Math.hypot(a.x - b.x, a.y - b.y),
+        mx: (a.x + b.x) / 2,
+        my: (a.y + b.y) / 2,
+      };
+      return;
+    }
+    if (pointers.size > 2) return;
+    // pressing on the drawing ends any edit in the panel, so keys reach the drawing
+    const ae = document.activeElement;
+    if (ae && ae !== document.body && ae.blur && pointers.size === 1) ae.blur();
+    // pan: middle button, right button on empty space, or a ruler
+    const rightPan = e.button === 2 && !pinAt(sx, sy);
+    if (e.button === 1 || rightPan || (e.button === 0 && inRulers(sx, sy))) {
+      e.preventDefault();
+      drag = { type: 'pan', sx, sy, tx: view.tx, ty: view.ty, moved: false };
+      svg.classList.add('panning');
+      return;
+    }
+    if (e.button !== 0) return;
+    const [wx, wy] = s2w(sx, sy);
+    const pin = pinAt(sx, sy);
+    beginChange();
+    if (pin) {
+      state.selected = pin.id;
+      drag = {
+        type: 'pin',
+        id: pin.id,
+        offX: pin.x - wx,
+        offY: pin.y - wy,
+        sx,
+        sy,
+        moved: false,
+        created: false,
+      };
+    } else {
+      const p = addPinAt(wx, wy, e);
+      drag = {
+        type: 'pin',
+        id: p.id,
+        offX: p.x - wx,
+        offY: p.y - wy,
+        sx,
+        sy,
+        moved: false,
+        created: true,
+      };
+    }
+    hover = null;
+    syncPinInputs();
+    requestRender();
+  });
+
+  svg.addEventListener('pointermove', (e) => {
+    const [sx, sy] = localXY(e);
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: sx, y: sy });
+    const [wx, wy] = s2w(sx, sy);
+    $('cursor').textContent = `X ${fmtCoord(wx)}  Y ${fmtCoord(wy)} mm`;
+    if (drag && drag.type === 'pinch' && pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      view.tx += mx - drag.mx;
+      view.ty += my - drag.my;
+      if (drag.d0 > 0 && d > 0) zoomAt(mx, my, d / drag.d0);
+      drag.d0 = d;
+      drag.mx = mx;
+      drag.my = my;
+      requestRender();
+      return;
+    }
+    if (drag && drag.type === 'pan') {
+      if (Math.hypot(sx - drag.sx, sy - drag.sy) >= 3) drag.moved = true;
+      view.tx = drag.tx + sx - drag.sx;
+      view.ty = drag.ty + sy - drag.sy;
+      requestRender();
+      return;
+    }
+    if (drag && drag.type === 'pin') {
+      if (!drag.moved && !drag.created && Math.hypot(sx - drag.sx, sy - drag.sy) < 3) return;
+      drag.moved = true;
+      const p = getPin(drag.id);
+      if (p) {
+        const nx = snap(wx + drag.offX, e);
+        const ny = snap(wy + drag.offY, e);
+        if (nx !== p.x || ny !== p.y) {
+          p.x = nx;
+          p.y = ny;
+          pinsChanged();
+          syncPinInputs();
+        }
+      }
+      return;
+    }
+    if (!pointers.size) {
+      hover = { sx, sy, wx, wy, alt: e.altKey };
+      svg.classList.toggle('overpin', Boolean(pinAt(sx, sy)));
+      requestRender();
+    }
+  });
+
+  function endPointer(e) {
+    pointers.delete(e.pointerId);
+    if (!drag) return;
+    if (drag.type === 'pinch') {
+      if (pointers.size === 0) drag = null;
+      return;
+    }
+    if (drag.type === 'pan') {
+      // on Windows the context menu event follows the release: do not let a
+      // right-button pan that ends over a pin delete it
+      if (drag.moved) suppressContextUntil = performance.now() + CONTEXT_GRACE_MS;
+      drag = null;
+      svg.classList.remove('panning');
+      return;
+    }
+    if (drag.type === 'pin') {
+      if (drag.created || drag.moved) commitChange();
+      else cancelChange();
+      drag = null;
+      autosave();
+    }
+  }
+  svg.addEventListener('pointerup', endPointer);
+  svg.addEventListener('pointercancel', endPointer);
+  svg.addEventListener('pointerleave', () => {
+    if (!pointers.size) {
+      hover = null;
+      requestRender();
+    }
+  });
+
+  svg.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if ((drag && drag.type === 'pan' && drag.moved) || performance.now() < suppressContextUntil) {
+      return;
+    }
+    const [sx, sy] = localXY(e);
+    const p = pinAt(sx, sy);
+    if (p) removePin(p.id);
+  });
+  // stop middle-button autoscroll (Windows, Firefox) and middle-click paste
+  svg.addEventListener('mousedown', (e) => {
+    if (e.button === 1) e.preventDefault();
+  });
+  svg.addEventListener('auxclick', (e) => {
+    if (e.button === 1) e.preventDefault();
+  });
+  svg.addEventListener('dblclick', (e) => {
+    const [sx, sy] = localXY(e);
+    const p = pinAt(sx, sy);
+    if (!p) return;
+    if (p.id === lastCreated.id && performance.now() - lastCreated.time < DBLCLICK_GRACE_MS) return;
+    cycleMode(p.id);
+  });
+  svg.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      const [sx, sy] = localXY(e);
+      const unit = WHEEL_UNIT_PX[e.deltaMode] || 1;
+      zoomAt(sx, sy, Math.exp(-e.deltaY * unit * 0.0015));
+    },
+    { passive: false },
+  );
+
+  // Typing in a text or number field: keys go to the field.
+  function isTyping(target) {
+    const tag = (target && target.tagName) || '';
+    const type = (target && target.type) || '';
+    return (
+      tag === 'TEXTAREA' ||
+      tag === 'SELECT' ||
+      (tag === 'INPUT' && type !== 'checkbox' && type !== 'file')
+    );
+  }
+  // Ctrl/Cmd+Z undoes, with Shift (or Ctrl/Cmd+Y) redoes; left to a field
+  // being typed in. Returns true for these keys.
+  function undoKey(e, typing) {
+    const k = e.key.toLowerCase();
+    if (!(e.ctrlKey || e.metaKey) || (k !== 'z' && k !== 'y')) return false;
+    if (typing) return true;
+    e.preventDefault();
+    if (k === 'y' || e.shiftKey) redo();
+    else undo();
+    return true;
+  }
+  const MODE_KEYS = new Map([
+    ['x', (id) => cycleMode(id)],
+    ['a', (id) => setMode(id, 'auto')],
+    ['t', (id) => setMode(id, 'through')],
+  ]);
+  const NUDGE_KEYS = {
+    ArrowLeft: [-1, 0],
+    ArrowRight: [1, 0],
+    ArrowUp: [0, -1],
+    ArrowDown: [0, 1],
+  };
+  // Keys for the selected pin: delete it, set its mode, nudge it a grid step
+  // (Shift: a major step).
+  function pinKey(e) {
+    const id = state.selected;
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      removePin(id);
+      return;
+    }
+    const setModeKey = MODE_KEYS.get(e.key.toLowerCase());
+    if (setModeKey) {
+      setModeKey(id);
+      return;
+    }
+    const dir = Object.hasOwn(NUDGE_KEYS, e.key) ? NUDGE_KEYS[e.key] : null;
+    if (dir) {
+      e.preventDefault();
+      const step = e.shiftKey ? grid.major : grid.minor;
+      nudge(dir[0] * step, dir[1] * step);
+    }
+  }
+  window.addEventListener('keydown', (e) => {
+    const typing = isTyping(e.target);
+    if (undoKey(e, typing)) return;
+    if (typing) {
+      if (e.key === 'Escape') e.target.blur();
+      return;
+    }
+    if (e.key === 'Escape') {
+      state.selected = null;
+      syncPinInputs();
+      requestRender();
+    } else if (e.key.toLowerCase() === 'f') fitToggle();
+    else if (state.selected !== null) pinKey(e);
+  });
+  window.addEventListener('resize', () => requestRender());
+
+  // ---------------------------------------------------------------- panel
+  const settingInputs = {
+    inW: 'W',
+    inH: 'H',
+    inD: 'd',
+    inT: 't',
+    inO: 'overhang',
+    inR: 'minR',
+    inHold: 'holdFactor',
+  };
+  function syncInputs() {
+    // a minimum bend radius of 0 is shown as an empty field with the placeholder "off"
+    const shown = (k) => (k === 'minR' && !state.settings.minR ? '' : state.settings[k]);
+    for (const [id, k] of Object.entries(settingInputs)) {
+      if (document.activeElement !== $(id)) $(id).value = shown(k);
+    }
+    syncPinInputs();
+    updateButtons();
+  }
+  for (const [id, k] of Object.entries(settingInputs)) {
+    $(id).addEventListener('change', () => {
+      const raw = $(id).value.trim();
+      const v = k === 'minR' && raw === '' ? 0 : parseFloat(raw); // an empty minimum radius = off
+      if (!validSetting(k, v) || v === state.settings[k]) {
+        $(id).value = k === 'minR' && !state.settings.minR ? '' : state.settings[k];
+        return;
+      }
+      change(() => {
+        state.settings[k] = v;
+        if (k === 'd' || k === 't' || k === 'holdFactor') solver.setSettings(solverSettings());
+      });
+      if (k === 'minR' && !v) $(id).value = '';
+      requestRender();
+    });
+  }
+  // The Selected pin box always shows all its fields; they are disabled when
+  // no pin is selected, so nothing moves when the selection changes.
+  function syncPinInputs() {
+    const p = getPin(state.selected);
+    for (const id of ['inPX', 'inPY', 'mThrough', 'mAuto', 'mLeft', 'mRight', 'btnDel']) {
+      $(id).disabled = !p;
+    }
+    $('pinName').textContent = p ? `Pin ${pinIndex(p.id) + 1}` : 'No pin selected';
+    if (!p) {
+      $('inPX').value = '';
+      $('inPY').value = '';
+      $('pinInfo').textContent = 'Click a pin to select it';
+      $('pinInfoTip').classList.add('off');
+    } else {
+      if (document.activeElement !== $('inPX')) $('inPX').value = p.x;
+      if (document.activeElement !== $('inPY')) $('inPY').value = p.y;
+    }
+    for (const [id, m] of [
+      ['mThrough', 'through'],
+      ['mAuto', 'auto'],
+      ['mLeft', 'left'],
+      ['mRight', 'right'],
+    ]) {
+      $(id).classList.toggle('on', Boolean(p) && p.mode === m);
+    }
+  }
+  for (const [id, k] of [
+    ['inPX', 'x'],
+    ['inPY', 'y'],
+  ]) {
+    $(id).addEventListener('change', () => {
+      const p = getPin(state.selected);
+      const v = parseFloat($(id).value);
+      if (!p || !Number.isFinite(v)) {
+        syncPinInputs();
+        return;
+      }
+      change(() => {
+        p[k] = v;
+        pinsChanged();
+      });
+    });
+  }
+  $('mAuto').addEventListener('click', () => setMode(state.selected, 'auto'));
+  $('mLeft').addEventListener('click', () => setMode(state.selected, 'left'));
+  $('mRight').addEventListener('click', () => setMode(state.selected, 'right'));
+  $('mThrough').addEventListener('click', () => setMode(state.selected, 'through'));
+  $('btnDel').addEventListener('click', () => removePin(state.selected));
+  $('btnFit').addEventListener('click', () => fitArea());
+  $('btnFitPins').addEventListener('click', () => fitPins());
+  $('btnUndo').addEventListener('click', () => undo());
+  $('btnRedo').addEventListener('click', () => redo());
+  $('btnClear').addEventListener('click', () => {
+    if (!state.pins.length) return;
+    change(() => {
+      state.pins = [];
+      state.selected = null;
+      pinsChanged();
+    });
+  });
+  $('btnExample').addEventListener('click', () => {
+    change(() => loadExample());
+    fitArea();
+  });
+  $('btnExport').addEventListener('click', () => exportSVG());
+  $('btnOpen').addEventListener('click', () => $('fileOpen').click());
+  function ioMessage(text, ok) {
+    $('ioMsg').textContent = text;
+    $('ioMsg').title = text;
+    $('ioMsg').className = `hint oneline ${ok ? 'ok' : 'bad'}`;
+  }
+  // Open an SVG saved by this tool, or a TSV coordinate list (told apart by content).
+  function openText(name, text) {
+    try {
+      if (/^\s*</.test(text)) {
+        const proj = parseProject(text);
+        const { problems } = checkProject(proj);
+        if (problems.length) {
+          throw new Error(
+            problems[0] +
+              (problems.length > 1
+                ? ` (and ${problems.length - 1} more problem${problems.length > 2 ? 's' : ''})`
+                : ''),
+          );
+        }
+        beginChange();
+        restore(proj);
+        commitChange();
+        fitArea();
+        ioMessage(`Opened ${name}: ${proj.pins.length} pins`, true);
+      } else {
+        const pins = parseTSV(text);
+        change(() => {
+          state.pins = pins.map((p) => ({ id: state.nextId++, x: p.x, y: p.y, mode: p.mode }));
+          state.selected = null;
+          solver.setState({ pins: state.pins.map((p) => Object.assign({}, p)), shape: null });
+          syncInputs();
+        });
+        requestRender();
+        fitPins();
+        ioMessage(`Opened ${name}: ${pins.length} pins`, true);
+      }
+    } catch (err) {
+      ioMessage(`Could not open ${name}: ${err.message}`, false);
+    }
+  }
+  $('fileOpen').addEventListener('change', async () => {
+    const f = $('fileOpen').files[0];
+    $('fileOpen').value = '';
+    if (f) openText(f.name, await f.text());
+  });
+  $('btnExportTsv').addEventListener('click', () =>
+    download(buildTSV(), 'spring-strip-pins.tsv', 'text/tab-separated-values'),
+  );
+
+  function loadExample() {
+    state.settings.W = EXAMPLE.W;
+    state.settings.H = EXAMPLE.H;
+    state.pins = EXAMPLE.pins.map(([x, y]) => ({ id: state.nextId++, x, y, mode: DEFAULT_MODE }));
+    state.selected = null;
+    solver.setState({ pins: state.pins.map((p) => Object.assign({}, p)), shape: null });
+    syncInputs();
+    requestRender();
+  }
+
+  // ---------------------------------------------------------------- background image
+  // A picture to trace over. Not part of the project: not exported, not in the
+  // undo history; remembered in this browser when it fits in local storage.
+  const BG_KEY = 'springStripJig.background';
+  let bg = { url: null, name: '', opacity: 0.5 };
+  try {
+    const b = JSON.parse(localStorage.getItem(BG_KEY) || 'null');
+    if (b && typeof b.url === 'string') bg = Object.assign(bg, b);
+  } catch {
+    /* none */
+  }
+  function saveBg() {
+    try {
+      if (bg.url) localStorage.setItem(BG_KEY, JSON.stringify(bg));
+      else localStorage.removeItem(BG_KEY);
+      return true;
+    } catch {
+      try {
+        localStorage.removeItem(BG_KEY);
+      } catch {
+        /* ignore */
+      }
+      return false;
+    }
+  }
+  function applyBg() {
+    const im = $('bgimg');
+    if (bg.url) {
+      im.setAttribute('href', bg.url);
+      im.style.display = '';
+    } else {
+      im.removeAttribute('href');
+      im.style.display = 'none';
+    }
+    im.setAttribute('opacity', bg.opacity);
+    $('btnBgRemove').disabled = !bg.url;
+    $('inBgOpacity').disabled = !bg.url;
+    $('btnBgRemove').title = bg.url ? `Remove ${bg.name}` : '';
+    $('inBgOpacity').value = bg.opacity;
+    $('bgOpacityVal').textContent = `${Math.round(bg.opacity * 100)}%`;
+  }
+  $('btnBg').addEventListener('click', () => $('fileBg').click());
+  $('fileBg').addEventListener('change', () => {
+    const f = $('fileBg').files[0];
+    $('fileBg').value = '';
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      const url = String(rd.result);
+      const test = new Image();
+      // shown only if it really is an image; kept for the next visit if it fits in storage
+      test.onload = () => {
+        bg.url = url;
+        bg.name = f.name;
+        saveBg();
+        applyBg();
+      };
+      test.src = url;
+    };
+    rd.readAsDataURL(f);
+  });
+  $('btnBgRemove').addEventListener('click', () => {
+    bg.url = null;
+    bg.name = '';
+    saveBg();
+    applyBg();
+  });
+  $('inBgOpacity').addEventListener('input', () => {
+    bg.opacity = Number($('inBgOpacity').value);
+    $('bgimg').setAttribute('opacity', bg.opacity);
+    $('bgOpacityVal').textContent = `${Math.round(bg.opacity * 100)}%`;
+  });
+  $('inBgOpacity').addEventListener('change', () => saveBg());
+  applyBg();
+
+  // ---------------------------------------------------------------- geometry for drawing
+  // Centreline with overhangs: [{x, y, dx, dy, k}] (unit tangent, signed curvature 1/mm).
+  function fullLine(r, overhang) {
+    const n = r.nodes.length;
+    if (n < 2) return [];
+    const out = [];
+    const d0 = [Math.cos(r.tangents[0]), Math.sin(r.tangents[0])];
+    const d1 = [Math.cos(r.tangents[n - 1]), Math.sin(r.tangents[n - 1])];
+    if (overhang > 0) {
+      out.push({
+        x: r.nodes[0][0] - d0[0] * overhang,
+        y: r.nodes[0][1] - d0[1] * overhang,
+        dx: d0[0],
+        dy: d0[1],
+        k: 0,
+      });
+    }
+    for (let i = 0; i < n; i++) {
+      out.push({
+        x: r.nodes[i][0],
+        y: r.nodes[i][1],
+        dx: Math.cos(r.tangents[i]),
+        dy: Math.sin(r.tangents[i]),
+        k: r.curvature[i],
+      });
+    }
+    if (overhang > 0) {
+      out.push({
+        x: r.nodes[n - 1][0] + d1[0] * overhang,
+        y: r.nodes[n - 1][1] + d1[1] * overhang,
+        dx: d1[0],
+        dy: d1[1],
+        k: 0,
+      });
+    }
+    return out;
+  }
+  // Cubic Bézier path through points with given unit tangents. off: normal offset.
+  function bezierPath(L, off, f, reverse, move) {
+    const pts = L.map((p) => ({ x: p.x + off * p.dy, y: p.y - off * p.dx, dx: p.dx, dy: p.dy }));
+    if (reverse) pts.reverse();
+    const sg = reverse ? -1 : 1;
+    let s = `${(move ? 'M' : 'L') + f(pts[0].x)} ${f(pts[0].y)}`;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const c = Math.hypot(b.x - a.x, b.y - a.y) / 3;
+      s += `C${f(a.x + sg * a.dx * c)} ${f(a.y + sg * a.dy * c)} ${f(b.x - sg * b.dx * c)} ${f(
+        b.y - sg * b.dy * c,
+      )} ${f(b.x)} ${f(b.y)}`;
+    }
+    return s;
+  }
+  function bandPath(L, half, f) {
+    return `${bezierPath(L, half, f, false, true) + bezierPath(L, -half, f, true, false)}Z`;
+  }
+  function tightRuns(L, minR) {
+    if (!(minR > 0)) return [];
+    const kl = 1 / minR;
+    const runs = [];
+    let cur = null;
+    for (let i = 1; i < L.length; i++) {
+      const bad = Math.abs(L[i - 1].k) > kl || Math.abs(L[i].k) > kl;
+      if (bad) {
+        if (!cur) {
+          cur = [L[i - 1]];
+          runs.push(cur);
+        }
+        cur.push(L[i]);
+      } else cur = null;
+    }
+    return runs;
+  }
+
+  // ---------------------------------------------------------------- render
+  const LABEL_COLOUR = { inside: 'var(--inside)', outside: 'var(--outside)' }; // otherwise straight
+  // A pin's handle ring and number tag: the ring shows the selection first, the tag the warning first.
+  function pinLook(sel, warn) {
+    const look = { ring: '#4b5563', width: 1, opacity: 0.55, tag: '#374151' };
+    if (warn) {
+      Object.assign(look, { ring: 'var(--warn)', width: 2, opacity: 1, tag: 'var(--warn)' });
+    }
+    if (sel) Object.assign(look, { ring: 'var(--select)', width: 2.5, opacity: 1 });
+    if (sel && !warn) look.tag = 'var(--select)';
+    return look;
+  }
+  // Ruler ticks: a labelled one runs to near the edge of the ruler, then major and minor ones.
+  function tickLength(isLab, isMaj, rulerSize) {
+    if (isLab) return rulerSize - 4;
+    return isMaj ? 8 : 4;
+  }
+  function attr(el, o) {
+    for (const [k, v] of Object.entries(o)) el.setAttribute(k, v);
+  }
+  function esc(s) {
+    return String(s).replace(
+      /[&<>"]/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c],
+    );
+  }
+
+  function render() {
+    measure();
+    computeGrid();
+    const S = state.settings;
+    const dec = Math.min(8, Math.max(1, Math.ceil(Math.log10(Math.max(view.z, 1e-12))) + 2));
+    const f = (v) => Number(v.toFixed(dec)).toString();
+    placeWorkArea();
+    const { dMinor, dMajor } = gridPaths();
+    $('grid-minor').setAttribute('d', dMinor);
+    $('grid-major').setAttribute('d', dMajor);
+    const ghost = isGhost(res);
+    const L = res.nodes && res.nodes.length >= 2 ? fullLine(res, S.overhang) : [];
+    $('strip-layer').innerHTML = stripMarkup(L, ghost, f);
+    const byId = new Map(res.pins.map((p) => [p.id, p]));
+    $('pin-layer').innerHTML = pinMarkup(byId, f);
+    $('overlay').innerHTML = overlayMarkup(byId, L, ghost);
+    $('rulers').innerHTML = rulers();
+    readouts();
+  }
+
+  function placeWorkArea() {
+    const { z, tx, ty } = view;
+    const { W, H } = state.settings;
+    const T = `matrix(${z} 0 0 ${z} ${tx} ${ty})`;
+    $('world').setAttribute('transform', T);
+    $('world2').setAttribute('transform', T);
+    attr($('wa-fill'), { x: 0, y: 0, width: W, height: H });
+    attr($('bgimg'), { x: 0, y: 0, width: W, height: H }); // fitted inside, proportions kept
+    attr($('wa-outline'), { x: 0, y: 0, width: W, height: H });
+  }
+
+  // The grid, clipped to the visible part of the work area, pixel-snapped.
+  function gridPaths() {
+    const z = view.z;
+    const { W, H } = state.settings;
+    const [vx0, vy0] = s2w(0, 0);
+    const [vx1, vy1] = s2w(view.w, view.h);
+    const gx0 = Math.max(0, vx0);
+    const gx1 = Math.min(W, vx1);
+    const gy0 = Math.max(0, vy0);
+    const gy1 = Math.min(H, vy1);
+    const out = { dMinor: '', dMajor: '' };
+    if (!(gx1 > gx0 && gy1 > gy0)) return out;
+    const sy0 = Math.round(gy0 * z + view.ty) + 0.5;
+    const sy1 = Math.round(gy1 * z + view.ty) + 0.5;
+    const sx0 = Math.round(gx0 * z + view.tx) + 0.5;
+    const sx1 = Math.round(gx1 * z + view.tx) + 0.5;
+    const step = grid.minor;
+    const ratio = Math.round(grid.major / grid.minor);
+    const add = (i, seg) => {
+      if (i % ratio === 0) out.dMajor += seg;
+      else out.dMinor += seg;
+    };
+    for (let i = Math.ceil(gx0 / step); i * step <= gx1; i++) {
+      add(i, `M${Math.round(i * step * z + view.tx) + 0.5} ${sy0}V${sy1}`);
+    }
+    for (let i = Math.ceil(gy0 / step); i * step <= gy1; i++) {
+      add(i, `M${sx0} ${Math.round(i * step * z + view.ty) + 0.5}H${sx1}`);
+    }
+    return out;
+  }
+
+  // The strip; one that is no solution for these pins is a dashed outline only.
+  function stripMarkup(L, ghost, f) {
+    if (!L.length) return '';
+    const S = state.settings;
+    if (ghost) {
+      return (
+        `<path d="${bandPath(L, S.t / 2, f)}" fill="var(--free)" fill-opacity="0.12" stroke="none"/>` +
+        `<path d="${bezierPath(L, 0, f, false, true)}" fill="none" stroke="var(--free)" stroke-width="1.5" stroke-dasharray="6 4" vector-effect="non-scaling-stroke"/>`
+      );
+    }
+    let out = `<path d="${bandPath(L, S.t / 2, f)}" fill="var(--strip)" fill-opacity="0.85" stroke="var(--strip-edge)" stroke-width="1" stroke-opacity="0.6" vector-effect="non-scaling-stroke"/>`;
+    for (const run of tightRuns(L, S.minR)) {
+      out += `<path d="${bezierPath(run, 0, f, false, true)}" fill="none" stroke="var(--tight)" stroke-width="${f(Math.max(S.t, 4 / view.z))}" stroke-opacity="0.8"/>`;
+    }
+    out += `<path d="${bezierPath(L, 0, f, false, true)}" fill="none" stroke="var(--centre)" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    return out;
+  }
+
+  // The pins at true size: a Through pin as a ring (the strip shows running
+  // through it), an engaged one filled in its label's colour, a released one dashed.
+  function pinMarkup(byId, f) {
+    const r0 = f(state.settings.d / 2);
+    let out = '';
+    for (const p of state.pins) {
+      const r = byId.get(p.id) || {};
+      const col = r.engaged ? LABEL_COLOUR[r.label] || 'var(--straight)' : 'var(--free)';
+      const at = `cx="${f(p.x)}" cy="${f(p.y)}" r="${r0}"`;
+      if (p.mode === 'through') {
+        out += `<circle ${at} fill="var(--through)" fill-opacity="0.15" stroke="var(--through)" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+      } else if (r.engaged) {
+        out += `<circle ${at} fill="${col}" fill-opacity="0.85" stroke="${col}" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+      } else {
+        out += `<circle ${at} fill="none" stroke="${col}" stroke-width="1.5" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"/>`;
+      }
+    }
+    return out;
+  }
+
+  // Everything drawn in screen pixels over the drawing.
+  function overlayMarkup(byId, L, ghost) {
+    let o = ghost ? '' : contactDots();
+    state.pins.forEach((p, i) => {
+      o += pinHandle(p, i, byId.get(p.id) || { warnings: [] }, ghost);
+    });
+    if (hover && !drag && !inRulers(hover.sx, hover.sy) && !pinAt(hover.sx, hover.sy)) {
+      o += hoverPreview();
+    }
+    // where the strip bends tightest
+    if (res.minRadiusAt && Number.isFinite(res.minRadius) && L.length && !ghost) {
+      const q = w2s(res.minRadiusAt[0], res.minRadiusAt[1]);
+      o += `<path d="M${q[0] - 5} ${q[1]}h10M${q[0]} ${q[1] - 5}v10" stroke="var(--tight)" stroke-width="1.5"/>`;
+    }
+    o += dimensions();
+    o += scaleBar();
+    if (state.pins.length < 2) {
+      const msg = state.pins.length
+        ? 'Click to place the second pin — the strip runs between them'
+        : 'Click anywhere on the work area to place the first pin';
+      o += `<text x="${(RULER_L + (view.w - RULER_L) / 2).toFixed(0)}" y="${(view.h - 40).toFixed(0)}" text-anchor="middle" fill="var(--muted)" style="font-size:13px">${esc(msg)}</text>`;
+    }
+    return o;
+  }
+
+  // where the strip touches each pin
+  function contactDots() {
+    let o = '';
+    for (const r of res.pins) {
+      if (r.contact) {
+        const q = w2s(r.contact[0], r.contact[1]);
+        o += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="2.6" fill="#fff" stroke="var(--centre)" stroke-width="1.2"/>`;
+      }
+    }
+    return o;
+  }
+
+  const MODE_LETTER = { auto: 'A', left: 'L', right: 'R', through: 'T' };
+  // A pin's handle ring, a dot when the pin is too small to see, and its number tag.
+  function pinHandle(p, i, r, ghost) {
+    const S = state.settings;
+    const z = view.z;
+    const q = w2s(p.x, p.y);
+    const rad = Math.max(HANDLE_PX, (S.d / 2) * z + 3);
+    const look = pinLook(
+      p.id === state.selected,
+      (r.warnings && r.warnings.length) || (!ghost && isReleased(r)),
+    );
+    let o = `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="${rad.toFixed(1)}" fill="none" stroke="${look.ring}" stroke-width="${look.width}" stroke-opacity="${look.opacity}"/>`;
+    if ((S.d / 2) * z < 2.5) {
+      o += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="2.5" fill="${r.engaged ? '#374151' : '#fff'}" stroke="#374151"/>`;
+    }
+    const label = `${i + 1} ${MODE_LETTER[p.mode] || '?'}`;
+    const bx = q[0] + rad * 0.72 + 2;
+    const by = q[1] - rad * 0.72 - 2;
+    const bw = 7 + label.length * 6.2;
+    o += `<rect x="${bx.toFixed(1)}" y="${(by - 13).toFixed(1)}" width="${bw.toFixed(1)}" height="15" rx="3" fill="${look.tag}" fill-opacity="0.9"/>`;
+    o += `<text x="${(bx + 3.5).toFixed(1)}" y="${(by - 2).toFixed(1)}" fill="#fff">${label}</text>`;
+    return o;
+  }
+
+  // Where a click would put a new pin, and what it would join.
+  function hoverPreview() {
+    const ins = insertionFor(hover.wx, hover.wy);
+    const gx = hover.alt ? hover.wx : snap(hover.wx);
+    const gy = hover.alt ? hover.wy : snap(hover.wy);
+    const g = w2s(gx, gy);
+    let o = '';
+    if (ins.kind === 'strip') {
+      const q = w2s(ins.point[0], ins.point[1]);
+      o += `<line x1="${q[0]}" y1="${q[1]}" x2="${g[0]}" y2="${g[1]}" stroke="var(--select)" stroke-width="1.5"/><circle cx="${q[0]}" cy="${q[1]}" r="4" fill="var(--select)"/>`;
+    } else if (ins.kind === 'end') {
+      const q = w2s(ins.from.x, ins.from.y);
+      o += `<line x1="${q[0]}" y1="${q[1]}" x2="${g[0]}" y2="${g[1]}" stroke="var(--select)" stroke-width="1.2" stroke-dasharray="5 4"/>`;
+    }
+    o += `<circle cx="${g[0]}" cy="${g[1]}" r="${Math.max(HANDLE_PX - 3, (state.settings.d / 2) * view.z)}" fill="var(--select)" fill-opacity="0.15" stroke="var(--select)" stroke-dasharray="3 3"/>`;
+    return o;
+  }
+
+  function arrowHead(x, y, ux, uy) {
+    const a = 7;
+    const b = 3;
+    return `M${x} ${y}L${x - ux * a - uy * b} ${y - uy * a + ux * b}L${x - ux * a + uy * b} ${y - uy * a - ux * b}Z`;
+  }
+  function dimLabel(x, y, text, vertical) {
+    const w = 8 + text.length * 6.3;
+    const tr = vertical ? ` transform="rotate(-90 ${x} ${y})"` : '';
+    return `<g${tr}><rect x="${x - w / 2}" y="${y - 8}" width="${w}" height="16" rx="3" fill="#fff" stroke="#5b6773" stroke-width="0.8"/><text x="${x}" y="${y + 4}" text-anchor="middle" fill="#1f2933" style="font-weight:600">${esc(text)}</text></g>`;
+  }
+  // Dimension lines for the work area; kept on screen when the edge scrolls away.
+  function dimensions() {
+    const S = state.settings;
+    const [x0, y0] = w2s(0, 0);
+    const [x1, y1] = w2s(S.W, S.H);
+    let o = '';
+    const yd = Math.max(RULER_T + 14, y0 - 20);
+    const xd = Math.max(RULER_L + 14, x0 - 20);
+    // horizontal (width)
+    if (x1 > RULER_L && x0 < view.w && yd < view.h) {
+      o += `<path d="M${x0} ${y0 - 4}V${yd - 5}M${x1} ${y0 - 4}V${yd - 5}" stroke="#5b6773" stroke-width="0.8" fill="none"/>`;
+      o += `<path d="M${x0} ${yd}H${x1}" stroke="#1f2933" stroke-width="1" fill="none"/>`;
+      o += `<path d="${arrowHead(x0, yd, -1, 0)}${arrowHead(x1, yd, 1, 0)}" fill="#1f2933"/>`;
+      const lx = Math.min(
+        Math.max((Math.max(x0, RULER_L) + Math.min(x1, view.w)) / 2, RULER_L + 50),
+        view.w - 50,
+      );
+      o += dimLabel(Math.min(Math.max(lx, x0 + 40), x1 - 40) || lx, yd, fmtLen(S.W), false);
+    }
+    // vertical (height)
+    if (y1 > RULER_T && y0 < view.h && xd < view.w) {
+      o += `<path d="M${x0 - 4} ${y0}H${xd - 5}M${x0 - 4} ${y1}H${xd - 5}" stroke="#5b6773" stroke-width="0.8" fill="none"/>`;
+      o += `<path d="M${xd} ${y0}V${y1}" stroke="#1f2933" stroke-width="1" fill="none"/>`;
+      o += `<path d="${arrowHead(xd, y0, 0, -1)}${arrowHead(xd, y1, 0, 1)}" fill="#1f2933"/>`;
+      const ly = Math.min(
+        Math.max((Math.max(y0, RULER_T) + Math.min(y1, view.h)) / 2, RULER_T + 50),
+        view.h - 50,
+      );
+      o += dimLabel(xd, Math.min(Math.max(ly, y0 + 40), y1 - 40) || ly, fmtLen(S.H), true);
+    }
+    return o;
+  }
+  function scaleBar() {
+    const len = niceAtLeast(90 / view.z);
+    const px = len * view.z;
+    const x = RULER_L + 12;
+    const y = view.h - 14;
+    return (
+      `<g><rect x="${x - 4}" y="${y - 18}" width="${px + 8}" height="24" rx="3" fill="#fff" fill-opacity="0.85"/>` +
+      `<path d="M${x} ${y - 4}V${y}H${x + px}V${y - 4}" fill="none" stroke="#1f2933" stroke-width="1.5"/>` +
+      `<text x="${x + px / 2}" y="${y - 6}" text-anchor="middle" fill="#1f2933">${esc(fmtLen(len))}</text></g>`
+    );
+  }
+  function rulers() {
+    const z = view.z;
+    const w = view.w;
+    const h = view.h;
+    let o = `<rect x="0" y="0" width="${w}" height="${RULER_T}" fill="var(--ruler)"/><rect x="0" y="0" width="${RULER_L}" height="${h}" fill="var(--ruler)"/>`;
+    o += `<path d="M0 ${RULER_T - 0.5}H${w}M${RULER_L - 0.5} 0V${h}" stroke="#b8c1ca" stroke-width="1"/>`;
+    const minor = grid.minor;
+    const major = grid.major;
+    // label step: a multiple of the major step at least 60 px apart
+    let lab = major;
+    for (const m of [1, 2, 5, 10, 20, 50]) {
+      lab = major * m;
+      if (lab * z >= 60) break;
+    }
+    let ticks = '';
+    let text = '';
+    const [wx0, wy0] = s2w(RULER_L, RULER_T);
+    const [wx1, wy1] = s2w(w, h);
+    const fmtTick = (v) => fmtNum(clean(v), Math.max(0, -Math.floor(Math.log10(lab) + 1e-9)));
+    for (let i = Math.ceil(wx0 / minor); i * minor <= wx1; i++) {
+      const v = i * minor;
+      const x = Math.round(v * z + view.tx) + 0.5;
+      const isMaj = Math.abs(v / major - Math.round(v / major)) < 1e-6;
+      const isLab = Math.abs(v / lab - Math.round(v / lab)) < 1e-6;
+      ticks += `M${x} ${RULER_T}v${-tickLength(isLab, isMaj, RULER_T)}`;
+      if (isLab) {
+        text += `<text x="${x + 3}" y="11" fill="#4b5563" style="font-size:10px">${fmtTick(v)}</text>`;
+      }
+    }
+    for (let i = Math.ceil(wy0 / minor); i * minor <= wy1; i++) {
+      const v = i * minor;
+      const y = Math.round(v * z + view.ty) + 0.5;
+      const isMaj = Math.abs(v / major - Math.round(v / major)) < 1e-6;
+      const isLab = Math.abs(v / lab - Math.round(v / lab)) < 1e-6;
+      ticks += `M${RULER_L} ${y}h${-tickLength(isLab, isMaj, RULER_L)}`;
+      if (isLab) {
+        text += `<text x="11" y="${y - 3}" fill="#4b5563" style="font-size:10px" transform="rotate(-90 11 ${y - 3})">${fmtTick(v)}</text>`;
+      }
+    }
+    o += `<path d="${ticks}" stroke="#7b8794" stroke-width="1" shape-rendering="crispEdges"/>${text}`;
+    o += `<rect x="0" y="0" width="${RULER_L}" height="${RULER_T}" fill="var(--ruler)"/><text x="${RULER_L / 2}" y="15" text-anchor="middle" fill="#7b8794" style="font-size:10px">mm</text>`;
+    return o;
+  }
+
+  const STATUS = {
+    empty: [
+      'Add two pins',
+      'busy',
+      'The strip needs at least two pins. Click on the work area to add pins.',
+    ],
+    converging: [
+      'Converging…',
+      'busy',
+      'The solver is still working out the shape. The page background is amber while this takes a moment.',
+    ],
+    converged: [
+      'Converged',
+      'ok',
+      'The strip is at rest on the pins: bending is balanced by the pin forces.',
+    ],
+    friction: ['Would slide out, held', 'bad', ''],
+    failed: ['No solution', 'bad', ''],
+    stalled: [
+      'Not converging',
+      'bad',
+      'The solver is not settling on a shape; the current one is shown. Pins very close together or overlapping are the usual cause.',
+    ],
+    invalid: ['Pins on top of each other', 'bad', ''],
+  };
+  // A shape that is no solution for the current pins (an earlier layout's, a
+  // failed attempt): drawn dashed, without readouts. Settled: fit to export.
+  function isGhost(r) {
+    return r.stale || r.status === 'failed' || r.status === 'invalid';
+  }
+  function isSettled(r) {
+    return (r.status === 'converged' || r.status === 'friction') && !r.stale;
+  }
+  let lastReadout = '';
+  function readouts() {
+    const r = res;
+    const has = r.nodes && r.nodes.length >= 2 && !isGhost(r);
+    const num = new Map(state.pins.map((p, i) => [p.id, i + 1]));
+    const [txt, cls, tip] = statusText(r, num);
+    const warns = warningsOf(r, num, has);
+    const minAt = has && r.minRadiusAt && Number.isFinite(r.minRadius) ? tightestPinText(r) : '';
+    const { sel, info: pinInfo, tip: pinTip } = selectedPinInfo(r);
+    // red page background for a settled result with a problem; while the solver
+    // is still working keep the previous state, so a drag does not flicker
+    if (r.status !== 'converging') {
+      $('stage').classList.toggle('problem', cls === 'bad' || warns.length > 0);
+    }
+    const key = [
+      txt,
+      tip,
+      state.pins.length,
+      has ? r.length : 0,
+      r.minRadius,
+      minAt,
+      JSON.stringify(warns),
+      pinInfo,
+      pinTip,
+      sel && sel.id,
+    ].join('#');
+    if (key === lastReadout) return;
+    lastReadout = key;
+    writeReadouts({ txt, cls, tip, warns, has, minAt, pinInfo, pinTip });
+  }
+
+  function writeReadouts({ txt, cls, tip, warns, has, minAt, pinInfo, pinTip }) {
+    const r = res;
+    const nw = warns.length;
+    $('status').textContent = nw ? `${txt} · ${nw} warning${nw > 1 ? 's' : ''}` : txt;
+    $('status').className = nw ? 'bad' : cls;
+    $('statusInfo').dataset.tip = [tip]
+      .concat(warns.map(([t, x]) => `⚠ ${t}\n${x}`))
+      .filter(Boolean)
+      .join('\n\n');
+    $('statusInfo').classList.toggle('warn', nw > 0);
+    $('rPins').textContent = state.pins.length;
+    $('rLen').textContent = has ? fmtLen(r.length) : '–';
+    $('rBlank').textContent = has ? fmtLen(r.length + 2 * state.settings.overhang) : '–';
+    let minText = '–';
+    if (has) minText = Number.isFinite(r.minRadius) ? fmtLen(r.minRadius) + minAt : 'straight';
+    $('rMinR').textContent = minText;
+    $('rMinR').title = $('rMinR').textContent;
+    $('pinInfo').textContent = pinInfo;
+    $('pinInfoTip').dataset.tip = pinTip;
+    $('pinInfoTip').classList.toggle('off', !pinTip);
+    $('pinInfoTip').tabIndex = pinTip ? 0 : -1;
+    syncPinInputs();
+  }
+
+  // The status line: [text, class, tooltip].
+  function statusText(r, num) {
+    let [txt, cls, tip] = STATUS[r.status] || ['–', 'busy', ''];
+    if (r.status === 'failed') tip = failedTip(r);
+    if (r.status === 'invalid') tip = invalidTip(r, num);
+    if (r.status === 'empty' && state.pins.length >= 2) {
+      [txt, cls, tip] = [
+        'Need two separate pins',
+        'bad',
+        'All the pins are at the same position. The strip needs at least two pins at different positions.',
+      ];
+    }
+    if (r.status === 'friction') tip = heldTip(r);
+    return [txt, cls, tip];
+  }
+  function failedTip(r) {
+    const shown = r.stale
+      ? 'The dashed strip is the shape from before your last change.'
+      : 'The dashed strip is the last shape it reached.';
+    return `The solver could not find a shape for this layout. ${shown} Pins very close together or overlapping are the usual cause.`;
+  }
+  function invalidTip(r, num) {
+    const why = (v) =>
+      v.why === 'through'
+        ? 'one is a Through pin and the other is not'
+        : 'one is Left and the other Right';
+    const pairs = r.invalid
+      .map(
+        (v) =>
+          `Pins ${num.get(v.a)} and ${num.get(v.b)} are at the same position, but ${why(v)}, so they cannot share a contact.`,
+      )
+      .join(' ');
+    const stale = r.stale ? ' The dashed strip is the shape from before your last change.' : '';
+    return `${pairs} Move one of them, or give them the same mode.${stale}`;
+  }
+  function heldTip(r) {
+    const mu = Number.isFinite(r.muReq) ? r.muReq.toFixed(2) : 'more than any real friction';
+    const where = r.heldBelowLimit
+      ? `at the longest length that keeps it on all its Left/Right pins, below the length limit of ${fmtNum(r.holdFactor, 2)} × the pin-to-pin distances (Settings)`
+      : `at the length limit, ${fmtNum(r.holdFactor, 2)} × the pin-to-pin distances (Settings)`;
+    return `On frictionless pins this layout has no resting shape: the strip would slide out. It is shown held ${where}. The end pins need a friction coefficient of at least ${mu} to hold it, or clamp the ends.`;
+  }
+
+  // Warnings for one pin n, as [short line, explanation].
+  const PIN_WARNINGS = new Map([
+    [
+      'wrap',
+      (n, r) => [
+        `Pin ${n}: strip wraps round the pin`,
+        `The strip bends tighter than the pin itself (radius under ${fmtLen(r.rEff)}), so it would wrap round the pin rather than touch it at one point. The shape near pin ${n} is approximate.`,
+      ],
+    ],
+    [
+      'liftoff',
+      (n) => [
+        `Pin ${n}: would lift off`,
+        `End pin ${n} is set to Left or Right, but the strip pulls away from that side. A real strip would lift off it; set the pin to Auto or Through, or move it.`,
+      ],
+    ],
+    [
+      'marginal',
+      (n) => [
+        `Pin ${n}: contact keeps changing`,
+        `Pin ${n}'s contact kept switching between touching and released (or between sides), so it was frozen. Pins very close together are the usual cause.`,
+      ],
+    ],
+  ]);
+  // A Left/Right pin the strip does not touch.
+  function isReleased(p) {
+    return (p.mode === 'left' || p.mode === 'right') && p.engaged === false;
+  }
+  // The warnings listed in the status tooltip, each as [short line, explanation].
+  function warningsOf(r, num, has) {
+    const S = state.settings;
+    const warns = [];
+    if (r.unstable && !isGhost(r)) {
+      warns.push([
+        'Unstable shape',
+        'This shape is an equilibrium, but an unstable one: the slightest push would make the strip snap to another shape, often sliding out. Move the pins, or set Left/Right pins where the strip should stay.',
+      ]);
+    }
+    // a warning about a pair of pins is listed once, under the lower pin number
+    const pairs = (n, ids, make) => {
+      for (const id of ids) {
+        const m = num.get(id);
+        if (m > n) warns.push(make(m));
+      }
+    };
+    for (const p of r.pins) {
+      const n = num.get(p.id);
+      for (const w of p.warnings || []) {
+        if (w === 'duplicate') {
+          pairs(n, p.sameAs, (m) => [
+            `Pins ${n} and ${m}: same position`,
+            `Pins ${n} and ${m} are at exactly the same position, so they act as one pin. Move one of them if that is not what you meant.`,
+          ]);
+        } else if (w === 'overlap') {
+          pairs(n, p.overlaps, (m) => [
+            `Pins ${n} and ${m} overlap`,
+            `Pins ${n} and ${m} are closer than the pin diameter (${fmtLen(S.d)}), so both could not be there. The shape near them is not meaningful; move one of them.`,
+          ]);
+        } else if (PIN_WARNINGS.has(w)) warns.push(PIN_WARNINGS.get(w)(n, r));
+      }
+      if (has && isReleased(p)) {
+        warns.push([
+          `Pin ${n}: released`,
+          `Pin ${n} is set to ${p.mode === 'left' ? 'Left' : 'Right'}, but the strip does not touch it, so it does not shape the strip. Move it towards the strip, or set it to Auto.`,
+        ]);
+      }
+    }
+    if (has && S.minR > 0 && r.minRadius < S.minR) {
+      warns.push([
+        `Tighter than the minimum radius`,
+        `Parts of the strip (drawn red) bend tighter than the minimum bend radius of ${fmtLen(S.minR)} set in Settings.`,
+      ]);
+    }
+    return warns;
+  }
+
+  // " · pin N": the pin nearest the tightest bend.
+  function tightestPinText(r) {
+    let bi = -1;
+    let bd = Infinity;
+    state.pins.forEach((p, i) => {
+      const d = Math.hypot(p.x - r.minRadiusAt[0], p.y - r.minRadiusAt[1]);
+      if (d < bd) {
+        bd = d;
+        bi = i;
+      }
+    });
+    return bi >= 0 ? ` · pin ${bi + 1}` : '';
+  }
+
+  // The selected pin's one-line description, and its tooltip.
+  function selectedPinInfo(r) {
+    const sel = getPin(state.selected);
+    if (!sel) return { sel, info: 'Click a pin to select it', tip: '' };
+    const sr = r.pins.find((p) => p.id === sel.id);
+    if (!sr) return { sel, info: '–', tip: '' };
+    const side = sr.side > 0 ? 'left' : 'right';
+    const pct = Math.round((sr.force || 0) * 100);
+    const load = `load ${pct}%`;
+    const loadTip =
+      `Load ${pct}%: how hard this pin pushes on the strip, compared with the pin that pushes hardest (100%). ` +
+      `It is relative because the strip's stiffness is not known; the shape and these ratios do not depend on it. The pins with the highest load need to be the sturdiest.`;
+    if (sel.mode === 'through') return { sel, info: `through the centre, ${load}`, tip: loadTip };
+    if (sr.engaged) return { sel, info: `${sr.label}, on the ${side}, ${load}`, tip: loadTip };
+    return {
+      sel,
+      info: `released (${side} side)`,
+      tip: 'Released: this pin does not touch the strip, so it carries no load. It touches again as soon as the strip presses against it.',
+    };
+  }
+
+  // One shared tooltip for every (i): positioned in the window, so it is never
+  // clipped by the scrolling panel. Hover, or tap / keyboard focus on touch.
+  const tooltip = $('tooltip');
+  function showTip(el) {
+    const text = el.dataset.tip;
+    if (!text) {
+      tooltip.hidden = true;
+      return;
+    }
+    tooltip.textContent = text;
+    tooltip.hidden = false;
+    const r = el.getBoundingClientRect();
+    const t = tooltip.getBoundingClientRect();
+    const left = Math.max(8, Math.min(window.innerWidth - t.width - 8, r.right - t.width));
+    const below = r.bottom + 6;
+    const above = r.top - t.height - 6;
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${below + t.height < window.innerHeight - 8 || above < 8 ? below : above}px`;
+  }
+  const tipTarget = (e) => e.target.closest && e.target.closest('.info');
+  document.addEventListener('mouseover', (e) => {
+    const el = tipTarget(e);
+    if (el) showTip(el);
+  });
+  document.addEventListener('mouseout', (e) => {
+    const el = tipTarget(e);
+    if (el && el !== document.activeElement) tooltip.hidden = true;
+  });
+  document.addEventListener('focusin', (e) => {
+    const el = tipTarget(e);
+    if (el) showTip(el);
+  });
+  document.addEventListener('focusout', (e) => {
+    if (tipTarget(e)) tooltip.hidden = true;
+  });
+  $('panel').addEventListener('scroll', () => {
+    tooltip.hidden = true;
+  });
+
+  // Foldable sections remember whether they are open.
+  const SECTIONS_KEY = 'springStripJig.sections';
+  try {
+    const open = JSON.parse(localStorage.getItem(SECTIONS_KEY) || 'null');
+    if (open) {
+      for (const d of document.querySelectorAll('details.sec')) {
+        d.open = Boolean(open[d.dataset.sec]);
+      }
+    }
+  } catch {
+    /* storage unavailable: keep the defaults */
+  }
+  for (const d of document.querySelectorAll('details.sec')) {
+    d.addEventListener('toggle', () => {
+      const open = {};
+      for (const x of document.querySelectorAll('details.sec')) open[x.dataset.sec] = x.open;
+      try {
+        localStorage.setItem(SECTIONS_KEY, JSON.stringify(open));
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------- SVG export / import
+  function buildSVG(layers) {
+    if (pinsDirty) {
+      solver.setPins(state.pins);
+      pinsDirty = false;
+    }
+    solver.solve(3000);
+    res = solver.result();
+    const S = state.settings;
+    const W = S.W;
+    const H = S.H;
+    const f = (v) => {
+      const s = (Math.round(v * 100) / 100).toFixed(2).replace(/\.?0+$/, '');
+      return s === '-0' ? '0' : s;
+    };
+    const stroke = (c) => `fill="none" stroke="${c}" stroke-width="0.1"`;
+    const layer = (id, body, extra) =>
+      `  <g id="${id}" inkscape:groupmode="layer" inkscape:label="${id}"${extra || ''}>\n${body}  </g>\n`;
+    let out = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+    out += `<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="${f(W)}mm" height="${f(H)}mm" viewBox="0 0 ${f(W)} ${f(H)}">\n`;
+    out += `  <title>Spring strip jig</title>\n`;
+    const note = exportNote(res);
+    if (note) out += `  <desc>${esc(note)}</desc>\n`;
+    out += `  <metadata id="spring-strip-project"><![CDATA[${snapshot()}]]></metadata>\n`;
+    if (layers.has('grid')) {
+      const step = niceAtLeast(Math.max(W, H) / 60);
+      let d = '';
+      for (let x = step; x < W - 1e-9; x += step) d += `M${f(x)} 0V${f(H)}`;
+      for (let y = step; y < H - 1e-9; y += step) d += `M0 ${f(y)}H${f(W)}`;
+      out += layer('grid', `    <path d="${d}" ${stroke('#b0b8c0')}/>\n`);
+    }
+    if (layers.has('work-area')) {
+      out += layer(
+        'work-area',
+        `    <rect x="0" y="0" width="${f(W)}" height="${f(H)}" ${stroke('#000000')}/>\n`,
+      );
+    }
+    if (layers.has('pins')) {
+      out += layer(
+        'pins',
+        state.pins
+          .map(
+            (p) =>
+              `    <circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(S.d / 2)}" ${stroke('#000000')}/>\n`,
+          )
+          .join(''),
+      );
+    }
+    if (layers.has('pin-centres')) {
+      const c = S.d / 4;
+      out += layer(
+        'pin-centres',
+        state.pins
+          .map(
+            (p) =>
+              `    <path d="M${f(p.x - c)} ${f(p.y)}H${f(p.x + c)}M${f(p.x)} ${f(p.y - c)}V${f(p.y + c)}" ${stroke('#0000ff')}/>\n`,
+          )
+          .join(''),
+      );
+    }
+    // the strip only once it has settled for these pins: a drawing to build from
+    const L = isSettled(res) && res.nodes && res.nodes.length >= 2 ? fullLine(res, S.overhang) : [];
+    if (layers.has('strip-outline') && L.length) {
+      out += layer(
+        'strip-outline',
+        `    <path d="${bandPath(L, S.t / 2, f)}" ${stroke('#ff0000')}/>\n`,
+      );
+    }
+    if (layers.has('strip-centreline') && L.length) {
+      out += layer(
+        'strip-centreline',
+        `    <path d="${bezierPath(L, 0, f, false, true)}" ${stroke('#00a000')}/>\n`,
+      );
+    }
+    if (layers.has('labels')) {
+      const fs = Math.max(W, H) / 120;
+      let b = state.pins
+        .map(
+          (p, i) =>
+            `    <text x="${f(p.x + S.d / 2 + fs * 0.3)}" y="${f(p.y - S.d / 2 - fs * 0.3)}" font-family="sans-serif" font-size="${f(fs)}" fill="#000000">${i + 1}</text>\n`,
+        )
+        .join('');
+      if (L.length) {
+        b += `    <text x="${f(fs)}" y="${f(H - fs)}" font-family="sans-serif" font-size="${f(fs)}" fill="#000000">${esc(`Work area ${fmtLen(W)} × ${fmtLen(H)}; pin Ø ${fmtLen(S.d)}; strip ${fmtLen(S.t)}; blank ${fmtLen(res.length + 2 * S.overhang)}`)}</text>\n`;
+      }
+      out += layer('labels', b);
+    }
+    out += `</svg>\n`;
+    return out;
+  }
+  function download(text, name, type) {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+  // What the drawing's <desc> says about the strip, if anything.
+  function exportNote(r) {
+    if (!isSettled(r)) {
+      return `The strip is not included: it has not settled for these pins (${(STATUS[r.status] || [r.status])[0]}).`;
+    }
+    if (r.status === 'friction') {
+      return `On frictionless pins this layout would slide out; the strip is shown held. The end pins need a friction coefficient of at least ${Number.isFinite(r.muReq) ? r.muReq.toFixed(2) : 'more than any real friction'}.`;
+    }
+    if (r.unstable) {
+      return 'The strip shape is an unstable equilibrium: a real strip would snap to another shape.';
+    }
+    return '';
+  }
+  function exportSVG() {
+    const layers = new Set(
+      [...document.querySelectorAll('[data-layer]')]
+        .filter((c) => c.checked)
+        .map((c) => c.dataset.layer),
+    );
+    download(buildSVG(layers), 'spring-strip.svg', 'image/svg+xml');
+    if ((layers.has('strip-outline') || layers.has('strip-centreline')) && !isSettled(res)) {
+      ioMessage(
+        `Downloaded the pins only: the strip has not settled (${(STATUS[res.status] || [res.status])[0]})`,
+        false,
+      );
+    } else ioMessage('Downloaded spring-strip.svg', true);
+  }
+
+  // Pin coordinates as TSV: a header row, then x, y (mm, y down) and mode.
+  function buildTSV() {
+    const num = (v) => String(Number(v.toFixed(6)));
+    return `${['x\ty\tmode']
+      .concat(state.pins.map((p) => [num(p.x), num(p.y), p.mode].join('\t')))
+      .join('\n')}\n`;
+  }
+  const MODE_NAMES = {
+    through: 'through',
+    t: 'through',
+    auto: 'auto',
+    a: 'auto',
+    left: 'left',
+    l: 'left',
+    right: 'right',
+    r: 'right',
+  };
+  // Lines: x, y and an optional mode, separated by tabs (or spaces). Blank
+  // lines and # comments are skipped, and so is a header as the first line.
+  function parseTSV(text) {
+    const pins = [];
+    let first = true;
+    text.split(/\r\n|\r|\n/).forEach((line, i) => {
+      const t = line.trim();
+      if (!t || t.startsWith('#')) return;
+      const f = (t.includes('\t') ? t.split('\t') : t.split(/ +/)).map((c) => c.trim());
+      const isFirst = first;
+      first = false;
+      const num = (c) =>
+        c !== undefined && c !== '' && Number.isFinite(Number(c)) ? Number(c) : NaN;
+      const x = num(f[0]);
+      const y = num(f[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        if (isFirst && !Number.isFinite(num(f[0]))) return; // a header row
+        throw new Error(`line ${i + 1}: expected numbers x and y, got "${t.slice(0, 40)}"`);
+      }
+      let mode = DEFAULT_MODE;
+      if (f[2]) {
+        mode = MODE_NAMES[f[2].toLowerCase()];
+        if (!mode) {
+          throw new Error(
+            `line ${i + 1}: unknown mode "${f[2]}" (use through, auto, left or right)`,
+          );
+        }
+      }
+      if (f.slice(3).some((c) => c !== '')) throw new Error(`line ${i + 1}: more than 3 columns`);
+      pins.push({ x, y, mode });
+    });
+    if (!pins.length) throw new Error('no coordinates found');
+    return pins;
+  }
+  function parseProject(text) {
+    const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+    const md = doc.getElementById('spring-strip-project');
+    if (!md) throw new Error('it has no spring-strip project data');
+    const o = JSON.parse(md.textContent);
+    if (!o || !Array.isArray(o.pins)) throw new Error('the project data is not valid');
+    return o;
+  }
+
+  // ---------------------------------------------------------------- start
+  let loaded = false;
+  try {
+    const s = localStorage.getItem(STORE_KEY);
+    if (s) {
+      restore(s);
+      loaded = true;
+    }
+  } catch {
+    loaded = false;
+  }
+  if (!loaded) loadExample();
+  syncInputs();
+  requestAnimationFrame(() => {
+    fitArea();
+  });
+
+  // test hooks
+  window.__jig = {
+    state,
+    solver,
+    view,
+    get res() {
+      return res;
+    },
+    get grid() {
+      return grid;
+    },
+    buildSVG,
+    buildTSV,
+    parseTSV,
+    openText,
+    fitArea,
+    undo,
+    redo,
+    snapshot,
+    restore,
+    parseProject,
+    checkProject,
+    // resolves with the status once a frame has run and the solver has nothing left to do
+    whenIdle: () =>
+      new Promise((resolve) => {
+        idleWaiters.push(resolve);
+        requestRender();
+      }),
+  };
+})();
+</script>
+</body>
+</html>
